@@ -438,8 +438,30 @@ export default function App() {
         else if (msg.type==="account") {setPositions(msg.positions||[]);setAccount(msg.account);}
         else if (msg.type==="init") {setPositions(msg.positions||[]);setAccount(msg.account);}
         else if (msg.type==="order_result") {
-          // Bridge confirms order
-          console.log("Order result:", msg);
+          if (msg.success) {
+            setNotification({
+              symbol: msg.symbol||"",
+              signal: `✓ ${msg.action} EXECUTED`,
+              confidence: `Ticket #${msg.ticket} @ ${msg.price}`,
+              summary: `Order berhasil dieksekusi di MT5`
+            });
+          } else {
+            setNotification({
+              symbol: msg.symbol||"ORDER",
+              signal: "✕ ORDER FAILED",
+              confidence: "ERROR",
+              summary: msg.error || "Order ditolak MT5"
+            });
+          }
+          setTimeout(()=>setNotification(null), 6000);
+        }
+        else if (msg.type==="close_result") {
+          if (msg.success) {
+            setNotification({symbol:"POSITION",signal:"✓ CLOSED",confidence:`Ticket #${msg.ticket}`,summary:"Posisi berhasil ditutup"});
+          } else {
+            setNotification({symbol:"CLOSE",signal:"✕ FAILED",confidence:"ERROR",summary:msg.error||"Gagal menutup posisi"});
+          }
+          setTimeout(()=>setNotification(null),5000);
         }
       } catch {}
     };
@@ -527,16 +549,26 @@ export default function App() {
       {notification && (
         <div style={{
           position:"fixed",top:16,right:16,zIndex:9999,
-          background: notification.signal.includes("BUY")?"#052e16":"#2d0b0b",
-          border:`1px solid ${notification.signal.includes("BUY")?"#16a34a":"#dc2626"}`,
-          borderRadius:10,padding:"14px 18px",maxWidth:300,boxShadow:"0 8px 32px #000c",
+          background: notification.signal.includes("✓") ? "#052e16"
+            : notification.signal.includes("✕") ? "#2d0b0b"
+            : notification.signal.includes("BUY") ? "#052e16" : "#2d0b0b",
+          border:`1px solid ${
+            notification.signal.includes("✓") ? "#16a34a"
+            : notification.signal.includes("✕") ? "#dc2626"
+            : notification.signal.includes("BUY") ? "#16a34a" : "#dc2626"
+          }`,
+          borderRadius:10,padding:"14px 18px",maxWidth:320,boxShadow:"0 8px 32px #000c",
           animation:"fadeIn 0.3s ease",
         }}>
-          <div style={{color:notification.signal.includes("BUY")?"#4ade80":"#f87171",fontWeight:700,fontSize:14,marginBottom:4}}>
-            ⚡ {notification.symbol} — {notification.signal}
+          <div style={{color:
+            notification.signal.includes("✓") ? "#4ade80"
+            : notification.signal.includes("✕") ? "#f87171"
+            : notification.signal.includes("BUY") ? "#4ade80" : "#f87171",
+            fontWeight:700,fontSize:14,marginBottom:4}}>
+            {notification.symbol} — {notification.signal}
           </div>
           <div style={{color:"#94a3b8",fontSize:11,lineHeight:1.5}}>{notification.summary}</div>
-          <div style={{color:"#475569",fontSize:10,marginTop:4}}>Confidence: {notification.confidence}</div>
+          <div style={{color:"#475569",fontSize:10,marginTop:4}}>{notification.confidence}</div>
           <button onClick={()=>setNotification(null)} style={{position:"absolute",top:8,right:10,background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:14}}>✕</button>
         </div>
       )}
