@@ -41,63 +41,34 @@ function generateMockTick(symbol, prev) {
   return { symbol, bid, ask, spread: symbol==="USDJPY"?2:1.2, time: new Date().toISOString(), digits: DIGITS[symbol] };
 }
 
-async function analyzeWithClaude(symbol, candles, tick) {
-  const recent = candles.slice(-20);
-  const closes = recent.map(c => c.close);
-  const last = closes[closes.length-1];
-  const first = closes[0];
-  const trend = last > first ? "naik" : "turun";
-  const change = (((last - first)/first)*100).toFixed(3);
-  const high20 = Math.max(...recent.map(c=>c.high));
-  const low20  = Math.min(...recent.map(c=>c.low));
-
-  const prompt = `Kamu adalah analis forex profesional. Berikan analisis teknikal singkat dalam Bahasa Indonesia.
-
-Pair: ${symbol}
-Bid: ${tick.bid} | Ask: ${tick.ask} | Spread: ${tick.spread} pips
-20 candle terakhir (M5):
-- Harga awal: ${first} → Harga saat ini: ${last}
-- Trend: ${trend} ${change}%
-- High 20 bar: ${high20} | Low 20 bar: ${low20}
-- Close prices: ${closes.slice(-5).join(", ")}
-
-Berikan:
-1. Analisis trend (2 kalimat)
-2. Level support & resistance penting
-3. Sinyal: BUY / SELL / WAIT (dengan alasan singkat)
-4. Saran SL dan TP (dalam pips)
-
-Format output JSON seperti ini:
-{
-  "trend": "...",
-  "support": ...,
-  "resistance": ...,
-  "signal": "BUY|SELL|WAIT",
-  "signal_reason": "...",
-  "sl_pips": ...,
-  "tp_pips": ...,
-  "confidence": "HIGH|MEDIUM|LOW",
-  "summary": "..."
-}`;
-
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        messages: [{ role: "user", content: prompt }],
-        system: "Kamu analis forex profesional. Selalu jawab dalam format JSON valid saja, tanpa markdown, tanpa penjelasan tambahan di luar JSON."
-      })
-    });
-    const data = await res.json();
-    const text = data.content?.[0]?.text || "{}";
-    const clean = text.replace(/```json|```/g,"").trim();
-    return JSON.parse(clean);
-  } catch(e) {
-    return { signal:"WAIT", summary:"Gagal mengambil analisis AI.", confidence:"LOW", trend:"—", sl_pips:0, tp_pips:0 };
+async function analyzeWithClaude(symbol, candles, tick, ws) {
+  // Kalau tidak ada koneksi WebSocket ke MT5 bridge, tampilkan pesan
+  if (!ws || ws.readyState !== 1) {
+    return { signal:"WAIT", summary:"Hubungkan ke MT5 bridge untuk analisis AI.", confidence:"LOW", trend:"—", sl_pips:0, tp_pips:0 };
   }
+
+  return new Promise((resolve) => {
+    // Kirim request analisis ke mt5_bridge.py
+    ws.send(JSON.stringify({ type: "analyze", symbol, candles, tick }));
+
+    // Tunggu response dari bridge
+    const handler = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === "analysis" && msg.symbol === symbol) {
+          ws.removeEventListener("message", handler);
+          resolve(msg);
+        }
+      } catch {}
+    };
+    ws.addEventListener("message", handler);
+
+    // Timeout 30 detik
+    setTimeout(() => {
+      ws.removeEventListener("message", handler);
+      resolve({ signal:"WAIT", summary:"Timeout — AI tidak merespons dalam 30 detik.", confidence:"LOW", trend:"—", sl_pips:0, tp_pips:0 });
+    }, 30000);
+  });
 }
 
 function MiniChart({ data, color }) {
@@ -368,7 +339,7 @@ export default function App() {
 
   const handleAnalyze = async (symbol) => {
     setAnalyzing(p=>({...p,[symbol]:true}));
-    const result = await analyzeWithClaude(symbol, candles[symbol]||[], ticks[symbol]||{});
+    const result = await analyzeWithClaude(symbol, candles[symbol]||[], ticks[symbol]||{}, wsRef.current);
     setAnalyses(p=>({...p,[symbol]:result}));
     setAnalyzing(p=>({...p,[symbol]:false}));
   };
