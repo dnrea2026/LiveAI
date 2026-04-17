@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
+import { AreaChart, Area, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 
 // ─────────────────────────────────────────────────────────
 // CONFIG
@@ -112,15 +112,18 @@ function Spark({data,up}){
 }
 
 function MainChart({data,symbol}){
-  if(!data||data.length<2)return<div style={{height:200,display:"flex",alignItems:"center",justifyContent:"center",color:C.dim,fontSize:11,letterSpacing:2}}>NO DATA</div>;
+  if(!data||data.length<2)return<div style={{height:180,display:"flex",alignItems:"center",justifyContent:"center",color:C.dim,fontSize:11,letterSpacing:2}}>NO DATA</div>;
   const cd=data.map(c=>({t:c.time.slice(11,16),v:c.close}));
-  const vals=data.map(c=>c.close),mn=Math.min(...vals),mx=Math.max(...vals),pad=(mx-mn)*.08;
+  const vals=data.map(c=>c.close);
+  const mn=Math.min(...vals),mx=Math.max(...vals),pad=(mx-mn)*.12||mn*0.001;
   const col=vals[vals.length-1]>=vals[0]?C.up:C.dn;
+  const dig=DIG[symbol]||5;
   return(
-    <ResponsiveContainer width="100%" height={200}>
-      <AreaChart data={cd} margin={{top:6,right:4,bottom:0,left:4}}>
-        <defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={col} stopOpacity={.15}/><stop offset="100%" stopColor={col} stopOpacity={0}/></linearGradient></defs>
-        <Tooltip contentStyle={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:4,fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:C.text,padding:"4px 8px"}} labelStyle={{color:C.dim}} itemStyle={{color:col}} formatter={v=>[v.toFixed(DIG[symbol]||5),""]}/>
+    <ResponsiveContainer width="100%" height={180}>
+      <AreaChart data={cd} margin={{top:6,right:4,bottom:0,left:2}}>
+        <defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={col} stopOpacity={.2}/><stop offset="100%" stopColor={col} stopOpacity={0}/></linearGradient></defs>
+        <YAxis domain={[mn-pad,mx+pad]} hide={false} width={dig>3?60:50} tick={{fill:C.dim,fontSize:9,fontFamily:"'JetBrains Mono',monospace"}} tickLine={false} axisLine={false} tickFormatter={v=>v.toFixed(dig>3?dig-1:dig)}/>
+        <Tooltip contentStyle={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:4,fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:C.text,padding:"4px 8px"}} labelStyle={{color:C.dim}} itemStyle={{color:col}} formatter={v=>[v.toFixed(dig),""]}/>
         <Area type="monotone" dataKey="v" stroke={col} strokeWidth={1.5} fill="url(#mg)" dot={false} isAnimationActive={false}/>
       </AreaChart>
     </ResponsiveContainer>
@@ -498,7 +501,13 @@ export default function App(){
             {filteredPairs.map(p=>(
               <PairRow key={p} symbol={p} tick={ticks[p]} candles={candles[p]}
                 analysis={analyses[p]} analyzing={analyzing[p]}
-                selected={sel===p} onSelect={setSel} onAnalyze={doAnalyze}/>
+                selected={sel===p}
+                onSelect={(sym)=>{
+                  setSel(sym);
+                  if(connected&&wsRef.current?.readyState===1)
+                    wsRef.current.send(JSON.stringify({type:"get_candles",symbol:sym,timeframe:tf,count:100}));
+                }}
+                onAnalyze={doAnalyze}/>
             ))}
           </div>
         </div>
