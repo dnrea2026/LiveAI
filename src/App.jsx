@@ -2,39 +2,117 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 // ── Pairs & Config ────────────────────────────────────────
-const PAIRS = ["EURUSD","GBPUSD","USDJPY","AUDUSD","USDCHF","XAUUSD","USOIL","USTEC100"];
+// Semua pair utama Exness MT5
+const PAIRS = [
+  // Forex Majors
+  "EURUSD","GBPUSD","USDJPY","AUDUSD","USDCHF","USDCAD","NZDUSD",
+  // Forex Minors
+  "EURGBP","EURJPY","EURCAD","EURAUD","EURNZD","EURCHF",
+  "GBPJPY","GBPAUD","GBPCAD","GBPCHF","GBPNZD",
+  "AUDJPY","AUDCAD","AUDCHF","AUDNZD",
+  "CADJPY","CHFJPY","NZDJPY",
+  // Metals & Commodities
+  "XAUUSD","XAGUSD","USOIL","UKOIL",
+  // Indices
+  "USTEC","US30","US500",
+  // Crypto
+  "BTCUSD","ETHUSD",
+];
+
 const PAIR_FLAGS = {
-  EURUSD:"🇪🇺🇺🇸", GBPUSD:"🇬🇧🇺🇸", USDJPY:"🇺🇸🇯🇵", AUDUSD:"🇦🇺🇺🇸", USDCHF:"🇺🇸🇨🇭",
-  XAUUSD:"🥇", USOIL:"🛢️", USTEC100:"📊",
-};
-const PAIR_NAMES = {
-  EURUSD:"Euro / Dollar", GBPUSD:"Pound / Dollar", USDJPY:"Dollar / Yen",
-  AUDUSD:"Aussie / Dollar", USDCHF:"Dollar / Franc",
-  XAUUSD:"Gold / Dollar", USOIL:"US Crude Oil", USTEC100:"Nasdaq 100",
-};
-const TIMEFRAMES = ["M1","M5","M15","H1","H4","D1"];
-const BASE_PRICES = {
-  EURUSD:1.0845, GBPUSD:1.2734, USDJPY:154.21, AUDUSD:0.6412, USDCHF:0.9023,
-  XAUUSD:2345.50, USOIL:78.40, USTEC100:18250.0,
-};
-const DIGITS = {
-  EURUSD:5, GBPUSD:5, USDJPY:3, AUDUSD:5, USDCHF:5,
-  XAUUSD:2, USOIL:2, USTEC100:1,
-};
-const POINT = {
-  EURUSD:0.00001, GBPUSD:0.00001, USDJPY:0.001, AUDUSD:0.00001, USDCHF:0.00001,
-  XAUUSD:0.01, USOIL:0.01, USTEC100:0.1,
+  // Majors
+  EURUSD:"🇪🇺🇺🇸",GBPUSD:"🇬🇧🇺🇸",USDJPY:"🇺🇸🇯🇵",AUDUSD:"🇦🇺🇺🇸",USDCHF:"🇺🇸🇨🇭",USDCAD:"🇺🇸🇨🇦",NZDUSD:"🇳🇿🇺🇸",
+  // Minors EUR
+  EURGBP:"🇪🇺🇬🇧",EURJPY:"🇪🇺🇯🇵",EURCAD:"🇪🇺🇨🇦",EURAUD:"🇪🇺🇦🇺",EURNZD:"🇪🇺🇳🇿",EURCHF:"🇪🇺🇨🇭",
+  // Minors GBP
+  GBPJPY:"🇬🇧🇯🇵",GBPAUD:"🇬🇧🇦🇺",GBPCAD:"🇬🇧🇨🇦",GBPCHF:"🇬🇧🇨🇭",GBPNZD:"🇬🇧🇳🇿",
+  // Minors AUD
+  AUDJPY:"🇦🇺🇯🇵",AUDCAD:"🇦🇺🇨🇦",AUDCHF:"🇦🇺🇨🇭",AUDNZD:"🇦🇺🇳🇿",
+  // Other
+  CADJPY:"🇨🇦🇯🇵",CHFJPY:"🇨🇭🇯🇵",NZDJPY:"🇳🇿🇯🇵",
+  // Commodities & Metals
+  XAUUSD:"🥇",XAGUSD:"🥈",USOIL:"🛢️",UKOIL:"🛢️",
+  // Indices
+  USTEC:"📊",US30:"📊",US500:"📊",
+  // Crypto
+  BTCUSD:"₿",ETHUSD:"Ξ",
 };
 
-// pips → price distance
-function pipsToPrice(symbol, pips) {
-  return pips * POINT[symbol] * 10;
-}
+const PAIR_NAMES = {
+  EURUSD:"Euro / Dollar",GBPUSD:"Pound / Dollar",USDJPY:"Dollar / Yen",
+  AUDUSD:"Aussie / Dollar",USDCHF:"Dollar / Franc",USDCAD:"Dollar / CAD",NZDUSD:"Kiwi / Dollar",
+  EURGBP:"Euro / Pound",EURJPY:"Euro / Yen",EURCAD:"Euro / CAD",EURAUD:"Euro / AUD",EURNZD:"Euro / NZD",EURCHF:"Euro / CHF",
+  GBPJPY:"Pound / Yen",GBPAUD:"Pound / AUD",GBPCAD:"Pound / CAD",GBPCHF:"Pound / CHF",GBPNZD:"Pound / NZD",
+  AUDJPY:"AUD / Yen",AUDCAD:"AUD / CAD",AUDCHF:"AUD / CHF",AUDNZD:"AUD / NZD",
+  CADJPY:"CAD / Yen",CHFJPY:"CHF / Yen",NZDJPY:"NZD / Yen",
+  XAUUSD:"Gold / Dollar",XAGUSD:"Silver / Dollar",USOIL:"US Crude Oil",UKOIL:"UK Brent Oil",
+  USTEC:"Nasdaq 100",US30:"Dow Jones 30",US500:"S&P 500",
+  BTCUSD:"Bitcoin / Dollar",ETHUSD:"Ethereum / Dollar",
+};
+
+// Pair groups untuk filter di sidebar
+const PAIR_GROUPS = {
+  "MAJOR":  ["EURUSD","GBPUSD","USDJPY","AUDUSD","USDCHF","USDCAD","NZDUSD"],
+  "MINOR":  ["EURGBP","EURJPY","EURCAD","EURAUD","EURNZD","EURCHF","GBPJPY","GBPAUD","GBPCAD","GBPCHF","GBPNZD","AUDJPY","AUDCAD","AUDCHF","AUDNZD","CADJPY","CHFJPY","NZDJPY"],
+  "METAL":  ["XAUUSD","XAGUSD"],
+  "ENERGY": ["USOIL","UKOIL"],
+  "INDEX":  ["USTEC","US30","US500"],
+  "CRYPTO": ["BTCUSD","ETHUSD"],
+};
+
+const TIMEFRAMES = ["M1","M5","M15","H1","H4","D1"];
+
+const BASE_PRICES = {
+  EURUSD:1.0845,GBPUSD:1.2734,USDJPY:154.21,AUDUSD:0.6412,USDCHF:0.9023,USDCAD:1.3650,NZDUSD:0.5980,
+  EURGBP:0.8512,EURJPY:167.40,EURCAD:1.4801,EURAUD:1.6910,EURNZD:1.8130,EURCHF:0.9740,
+  GBPJPY:196.60,GBPAUD:1.9870,GBPCAD:1.7390,GBPCHF:1.1440,GBPNZD:2.1290,
+  AUDJPY:99.01,AUDCAD:0.8820,AUDCHF:0.5840,AUDNZD:1.0870,
+  CADJPY:112.97,CHFJPY:170.80,NZDJPY:92.10,
+  XAUUSD:2345.50,XAGUSD:28.40,USOIL:78.40,UKOIL:82.10,
+  USTEC:18250.0,US30:39800.0,US500:5280.0,
+  BTCUSD:67500.0,ETHUSD:3450.0,
+};
+
+const DIGITS = {
+  EURUSD:5,GBPUSD:5,USDJPY:3,AUDUSD:5,USDCHF:5,USDCAD:5,NZDUSD:5,
+  EURGBP:5,EURJPY:3,EURCAD:5,EURAUD:5,EURNZD:5,EURCHF:5,
+  GBPJPY:3,GBPAUD:5,GBPCAD:5,GBPCHF:5,GBPNZD:5,
+  AUDJPY:3,AUDCAD:5,AUDCHF:5,AUDNZD:5,
+  CADJPY:3,CHFJPY:3,NZDJPY:3,
+  XAUUSD:2,XAGUSD:3,USOIL:2,UKOIL:2,
+  USTEC:1,US30:1,US500:1,
+  BTCUSD:2,ETHUSD:2,
+};
+
+// 1 pip = berapa unit harga
+const PIPVALUE = {
+  EURUSD:0.0001,GBPUSD:0.0001,USDJPY:0.01,AUDUSD:0.0001,USDCHF:0.0001,USDCAD:0.0001,NZDUSD:0.0001,
+  EURGBP:0.0001,EURJPY:0.01,EURCAD:0.0001,EURAUD:0.0001,EURNZD:0.0001,EURCHF:0.0001,
+  GBPJPY:0.01,GBPAUD:0.0001,GBPCAD:0.0001,GBPCHF:0.0001,GBPNZD:0.0001,
+  AUDJPY:0.01,AUDCAD:0.0001,AUDCHF:0.0001,AUDNZD:0.0001,
+  CADJPY:0.01,CHFJPY:0.01,NZDJPY:0.01,
+  XAUUSD:0.1,XAGUSD:0.01,USOIL:0.01,UKOIL:0.01,
+  USTEC:1.0,US30:1.0,US500:0.1,
+  BTCUSD:1.0,ETHUSD:0.1,
+};
 
 // ── Mock data ─────────────────────────────────────────────
+function getMockVol(symbol) {
+  if (["USDJPY","EURJPY","GBPJPY","AUDJPY","CADJPY","CHFJPY","NZDJPY"].includes(symbol)) return 0.15;
+  if (symbol==="XAUUSD") return 2.5;
+  if (symbol==="XAGUSD") return 0.15;
+  if (symbol==="USOIL"||symbol==="UKOIL") return 0.35;
+  if (symbol==="USTEC") return 35;
+  if (symbol==="US30") return 80;
+  if (symbol==="US500") return 10;
+  if (symbol==="BTCUSD") return 250;
+  if (symbol==="ETHUSD") return 15;
+  return 0.0008;
+}
+
 function generateMockCandles(symbol, count=80) {
-  const base = BASE_PRICES[symbol];
-  const vol = symbol === "USDJPY" ? 0.15 : symbol === "XAUUSD" ? 3.0 : symbol === "USOIL" ? 0.4 : symbol === "USTEC100" ? 40 : 0.0008;
+  const base = BASE_PRICES[symbol]||1.0;
+  const vol = getMockVol(symbol);
   const data = [];
   let price = base;
   const now = Date.now();
@@ -42,12 +120,13 @@ function generateMockCandles(symbol, count=80) {
     const change = (Math.random()-0.49)*vol;
     const open = price;
     price += change;
+    const dig = DIGITS[symbol]||5;
     data.push({
       time: new Date(now - i*5*60000).toISOString(),
-      open: +open.toFixed(DIGITS[symbol]),
-      high: +(Math.max(open,price)+Math.random()*vol*0.5).toFixed(DIGITS[symbol]),
-      low:  +(Math.min(open,price)-Math.random()*vol*0.5).toFixed(DIGITS[symbol]),
-      close: +price.toFixed(DIGITS[symbol]),
+      open: +open.toFixed(dig),
+      high: +(Math.max(open,price)+Math.random()*vol*0.5).toFixed(dig),
+      low:  +(Math.min(open,price)-Math.random()*vol*0.5).toFixed(dig),
+      close: +price.toFixed(dig),
       volume: Math.floor(Math.random()*2000+500),
     });
   }
@@ -55,12 +134,14 @@ function generateMockCandles(symbol, count=80) {
 }
 
 function generateMockTick(symbol, prev) {
-  const base = prev?.bid || BASE_PRICES[symbol];
-  const vol = symbol === "USDJPY" ? 0.03 : symbol === "XAUUSD" ? 0.5 : symbol === "USOIL" ? 0.05 : symbol === "USTEC100" ? 5 : 0.00015;
-  const bid = +(base+(Math.random()-0.49)*vol).toFixed(DIGITS[symbol]);
-  const spreadPts = symbol === "XAUUSD" ? 0.3 : symbol === "USOIL" ? 0.03 : symbol === "USTEC100" ? 1.5 : symbol === "USDJPY" ? 0.02 : 0.00012;
-  const ask = +(bid+spreadPts).toFixed(DIGITS[symbol]);
-  return { symbol, bid, ask, spread: symbol==="USDJPY"?2:symbol==="XAUUSD"?30:symbol==="USOIL"?3:symbol==="USTEC100"?15:1.2, time: new Date().toISOString(), digits: DIGITS[symbol] };
+  const base = prev?.bid || BASE_PRICES[symbol]||1.0;
+  const vol = getMockVol(symbol) * 0.2;
+  const dig = DIGITS[symbol]||5;
+  const bid = +(base+(Math.random()-0.49)*vol).toFixed(dig);
+  const pip = PIPVALUE[symbol]||0.0001;
+  const spreadPips = symbol==="XAUUSD"?30:symbol==="BTCUSD"?50:symbol==="USTEC"?15:symbol==="US30"?20:["USDJPY","EURJPY","GBPJPY","AUDJPY","CADJPY","CHFJPY","NZDJPY"].includes(symbol)?2:1.2;
+  const ask = +(bid + spreadPips * pip).toFixed(dig);
+  return { symbol, bid, ask, spread: spreadPips, time: new Date().toISOString(), digits: dig };
 }
 
 // ── Notification helpers ──────────────────────────────────
@@ -182,7 +263,7 @@ function SignalBadge({signal, confidence}) {
   return <span style={{background:c.bg,border:`1px solid ${c.border}`,color:c.text,padding:"2px 10px",borderRadius:4,fontSize:12,fontFamily:"monospace",fontWeight:700,letterSpacing:1}}>{c.label}</span>;
 }
 
-// ── Order Panel (FIXED + SL/TP in price) ─────────────────
+// ── Order Panel ───────────────────────────────────────────
 function OrderPanel({symbol, tick, onOrder, wsConnected}) {
   const [vol, setVol] = useState("0.01");
   const [slPips, setSlPips] = useState("");
@@ -190,17 +271,16 @@ function OrderPanel({symbol, tick, onOrder, wsConnected}) {
   const [orderResult, setOrderResult] = useState(null);
 
   const digits = DIGITS[symbol]||5;
-  const pt = POINT[symbol]||0.00001;
+  const pip = PIPVALUE[symbol]||0.0001;
+  const slP = parseFloat(slPips)||0;
+  const tpP = parseFloat(tpPips)||0;
 
-  // Hitung harga SL/TP dari pips
-  const slPrice = slPips && tick ? {
-    buy:  +(tick.ask - parseFloat(slPips)*pt*10).toFixed(digits),
-    sell: +(tick.bid + parseFloat(slPips)*pt*10).toFixed(digits),
-  } : null;
-  const tpPrice = tpPips && tick ? {
-    buy:  +(tick.ask + parseFloat(tpPips)*pt*10).toFixed(digits),
-    sell: +(tick.bid - parseFloat(tpPips)*pt*10).toFixed(digits),
-  } : null;
+  const calc = tick ? {
+    slBuy:  slP ? +(tick.ask - slP*pip).toFixed(digits) : null,
+    slSell: slP ? +(tick.bid + slP*pip).toFixed(digits) : null,
+    tpBuy:  tpP ? +(tick.ask + tpP*pip).toFixed(digits) : null,
+    tpSell: tpP ? +(tick.bid - tpP*pip).toFixed(digits) : null,
+  } : {};
 
   const doOrder = (action) => {
     if (!wsConnected) {
@@ -208,75 +288,110 @@ function OrderPanel({symbol, tick, onOrder, wsConnected}) {
       setTimeout(()=>setOrderResult(null),5000);
       return;
     }
-    const slVal = slPrice ? (action==="BUY"?slPrice.buy:slPrice.sell) : 0;
-    const tpVal = tpPrice ? (action==="BUY"?tpPrice.buy:tpPrice.sell) : 0;
+    const slVal = action==="BUY" ? (calc.slBuy||0) : (calc.slSell||0);
+    const tpVal = action==="BUY" ? (calc.tpBuy||0) : (calc.tpSell||0);
     onOrder(symbol, action, vol, slVal, tpVal);
     setOrderResult({ok:true, msg:`Order ${action} ${vol} lot ${symbol} dikirim ke MT5...`});
-    setTimeout(()=>setOrderResult(null),4000);
+    setTimeout(()=>setOrderResult(null),5000);
   };
 
+  const inputStyle = (borderClr) => ({
+    width:"100%", background:"#0a0f1e", border:`1px solid ${borderClr}`,
+    borderRadius:5, padding:"8px 10px", color:"#e2e8f0",
+    fontFamily:"monospace", fontSize:13, boxSizing:"border-box",
+  });
+
   return (
-    <div style={{background:"#0d1117",border:"1px solid #c9a84c33",borderRadius:10,padding:16,marginTop:12}}>
-      <div style={{color:"#c9a84c",fontSize:11,fontFamily:"monospace",marginBottom:10,letterSpacing:2,fontWeight:700}}>
-        ◈ QUICK ORDER — {symbol}
-        {!wsConnected && <span style={{color:"#f87171",marginLeft:8,fontSize:10}}>⚠ Tidak terhubung MT5</span>}
+    <div style={{background:"#0d1117",border:"1px solid #c9a84c33",borderRadius:10,padding:16,marginTop:4}}>
+      <div style={{color:"#c9a84c",fontSize:10,marginBottom:10,letterSpacing:2,fontWeight:700,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span>◈ QUICK ORDER — {symbol}</span>
+        {!wsConnected && <span style={{color:"#f87171",fontSize:10}}>⚠ Tidak terhubung MT5</span>}
       </div>
 
-      {/* Harga BID/ASK */}
+      {/* BID / ASK bar */}
       {tick && (
-        <div style={{display:"flex",gap:16,marginBottom:12,padding:"8px 12px",background:"#0a0f1e",borderRadius:6,border:"1px solid #1e293b"}}>
-          <span style={{fontSize:11,color:"#475569"}}>BID <span style={{color:"#f87171",fontWeight:700,fontSize:14}}>{tick.bid?.toFixed(digits)}</span></span>
-          <span style={{fontSize:11,color:"#475569"}}>ASK <span style={{color:"#4ade80",fontWeight:700,fontSize:14}}>{tick.ask?.toFixed(digits)}</span></span>
-          <span style={{fontSize:11,color:"#475569"}}>SPR <span style={{color:"#94a3b8"}}>{tick.spread}</span></span>
+        <div style={{display:"flex",gap:0,marginBottom:12,borderRadius:6,overflow:"hidden",border:"1px solid #1e293b"}}>
+          <div style={{flex:1,padding:"8px 12px",background:"#1a0a0a",textAlign:"center"}}>
+            <div style={{color:"#475569",fontSize:9,letterSpacing:1,marginBottom:2}}>SELL / BID</div>
+            <div style={{color:"#f87171",fontWeight:700,fontSize:18,fontFamily:"monospace"}}>{tick.bid?.toFixed(digits)}</div>
+          </div>
+          <div style={{width:1,background:"#1e293b"}}/>
+          <div style={{padding:"8px 12px",background:"#0d1117",textAlign:"center",minWidth:60}}>
+            <div style={{color:"#475569",fontSize:9,letterSpacing:1,marginBottom:2}}>SPR</div>
+            <div style={{color:"#94a3b8",fontSize:13,fontFamily:"monospace"}}>{tick.spread}</div>
+          </div>
+          <div style={{width:1,background:"#1e293b"}}/>
+          <div style={{flex:1,padding:"8px 12px",background:"#0a1a0a",textAlign:"center"}}>
+            <div style={{color:"#475569",fontSize:9,letterSpacing:1,marginBottom:2}}>BUY / ASK</div>
+            <div style={{color:"#4ade80",fontWeight:700,fontSize:18,fontFamily:"monospace"}}>{tick.ask?.toFixed(digits)}</div>
+          </div>
         </div>
       )}
 
-      {/* Input fields */}
-      <div style={{display:"flex",gap:8,marginBottom:8}}>
-        {/* Volume */}
-        <div style={{flex:1}}>
-          <div style={{color:"#475569",fontSize:10,marginBottom:3}}>VOLUME (lot)</div>
-          <input value={vol} onChange={e=>setVol(e.target.value)}
-            style={{width:"100%",background:"#1e293b",border:"1px solid #334155",borderRadius:4,padding:"7px 8px",color:"#e2e8f0",fontFamily:"monospace",fontSize:12,boxSizing:"border-box"}}/>
+      {/* Inputs */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
+        <div>
+          <div style={{color:"#c9a84c",fontSize:10,marginBottom:4,letterSpacing:1}}>VOLUME (lot)</div>
+          <input value={vol} onChange={e=>setVol(e.target.value)} style={inputStyle("#c9a84c44")}/>
         </div>
-        {/* SL */}
-        <div style={{flex:1}}>
-          <div style={{color:"#475569",fontSize:10,marginBottom:3}}>SL (pips)</div>
-          <input value={slPips} onChange={e=>setSlPips(e.target.value)} placeholder="0"
-            style={{width:"100%",background:"#1e293b",border:"1px solid #f9731622",borderRadius:4,padding:"7px 8px",color:"#f97316",fontFamily:"monospace",fontSize:12,boxSizing:"border-box"}}/>
-          {slPrice && <div style={{fontSize:9,color:"#f97316",marginTop:2}}>BUY: {slPrice.buy} | SELL: {slPrice.sell}</div>}
+        <div>
+          <div style={{color:"#f97316",fontSize:10,marginBottom:4,letterSpacing:1}}>STOP LOSS (pips)</div>
+          <input value={slPips} onChange={e=>setSlPips(e.target.value)} placeholder="misal: 20" style={inputStyle("#f9731655")}/>
+          {slP>0 && tick && (
+            <div style={{marginTop:5,padding:"5px 8px",background:"#1a0a00",borderRadius:4,border:"1px solid #f9731622"}}>
+              <div style={{color:"#f97316",fontSize:9,letterSpacing:1,marginBottom:2}}>HARGA SL</div>
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <span style={{color:"#94a3b8",fontSize:10}}>▲ BUY: <b style={{color:"#f97316"}}>{calc.slBuy}</b></span>
+                <span style={{color:"#94a3b8",fontSize:10}}>▼ SELL: <b style={{color:"#f97316"}}>{calc.slSell}</b></span>
+              </div>
+            </div>
+          )}
         </div>
-        {/* TP */}
-        <div style={{flex:1}}>
-          <div style={{color:"#475569",fontSize:10,marginBottom:3}}>TP (pips)</div>
-          <input value={tpPips} onChange={e=>setTpPips(e.target.value)} placeholder="0"
-            style={{width:"100%",background:"#1e293b",border:"1px solid #a78bfa22",borderRadius:4,padding:"7px 8px",color:"#a78bfa",fontFamily:"monospace",fontSize:12,boxSizing:"border-box"}}/>
-          {tpPrice && <div style={{fontSize:9,color:"#a78bfa",marginTop:2}}>BUY: {tpPrice.buy} | SELL: {tpPrice.sell}</div>}
+        <div>
+          <div style={{color:"#a78bfa",fontSize:10,marginBottom:4,letterSpacing:1}}>TAKE PROFIT (pips)</div>
+          <input value={tpPips} onChange={e=>setTpPips(e.target.value)} placeholder="misal: 40" style={inputStyle("#a78bfa55")}/>
+          {tpP>0 && tick && (
+            <div style={{marginTop:5,padding:"5px 8px",background:"#0e0a1a",borderRadius:4,border:"1px solid #a78bfa22"}}>
+              <div style={{color:"#a78bfa",fontSize:9,letterSpacing:1,marginBottom:2}}>HARGA TP</div>
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <span style={{color:"#94a3b8",fontSize:10}}>▲ BUY: <b style={{color:"#a78bfa"}}>{calc.tpBuy}</b></span>
+                <span style={{color:"#94a3b8",fontSize:10}}>▼ SELL: <b style={{color:"#a78bfa"}}>{calc.tpSell}</b></span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* BUY / SELL buttons */}
-      <div style={{display:"flex",gap:8}}>
+      {/* R:R Summary */}
+      {slP>0 && tpP>0 && (
+        <div style={{marginBottom:10,padding:"7px 12px",background:"#0a0f1e",borderRadius:6,border:"1px solid #1e293b",fontSize:10,fontFamily:"monospace",display:"flex",gap:16,flexWrap:"wrap"}}>
+          <span style={{color:"#475569"}}>Vol: <b style={{color:"#c9a84c"}}>{vol} lot</b></span>
+          <span style={{color:"#475569"}}>SL: <b style={{color:"#f97316"}}>{slP} pips</b></span>
+          <span style={{color:"#475569"}}>TP: <b style={{color:"#a78bfa"}}>{tpP} pips</b></span>
+          <span style={{color:"#475569"}}>R:R = <b style={{color:"#22d3ee"}}>1:{(tpP/slP).toFixed(1)}</b></span>
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
         <button onClick={()=>doOrder("BUY")} style={{
-          flex:1,padding:"11px 0",border:"none",borderRadius:6,fontFamily:"monospace",
-          fontWeight:700,fontSize:13,cursor:"pointer",letterSpacing:1,
+          padding:"13px 0",border:"none",borderRadius:7,fontFamily:"monospace",
+          fontWeight:700,fontSize:14,cursor:"pointer",letterSpacing:1,
           background:"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",
-          boxShadow:"0 2px 12px #16a34a44",transition:"opacity 0.15s",
-        }}>▲ BUY {tick?.ask?.toFixed(digits)}</button>
+          boxShadow:"0 2px 16px #16a34a44",
+        }}>▲ BUY<br/><span style={{fontSize:11,opacity:0.85}}>{tick?.ask?.toFixed(digits)}</span></button>
         <button onClick={()=>doOrder("SELL")} style={{
-          flex:1,padding:"11px 0",border:"none",borderRadius:6,fontFamily:"monospace",
-          fontWeight:700,fontSize:13,cursor:"pointer",letterSpacing:1,
+          padding:"13px 0",border:"none",borderRadius:7,fontFamily:"monospace",
+          fontWeight:700,fontSize:14,cursor:"pointer",letterSpacing:1,
           background:"linear-gradient(135deg,#dc2626,#b91c1c)",color:"#fff",
-          boxShadow:"0 2px 12px #dc262644",transition:"opacity 0.15s",
-        }}>▼ SELL {tick?.bid?.toFixed(digits)}</button>
+          boxShadow:"0 2px 16px #dc262644",
+        }}>▼ SELL<br/><span style={{fontSize:11,opacity:0.85}}>{tick?.bid?.toFixed(digits)}</span></button>
       </div>
 
-      {/* Order result feedback */}
       {orderResult && (
         <div style={{marginTop:8,padding:"7px 10px",borderRadius:5,fontSize:11,fontFamily:"monospace",
-          background: orderResult.ok?"#052e16":"#2d0b0b",
-          border: `1px solid ${orderResult.ok?"#16a34a":"#dc2626"}`,
-          color: orderResult.ok?"#4ade80":"#f87171",
+          background:orderResult.ok?"#052e16":"#2d0b0b",
+          border:`1px solid ${orderResult.ok?"#16a34a":"#dc2626"}`,
+          color:orderResult.ok?"#4ade80":"#f87171",
         }}>{orderResult.ok?"✓":"✕"} {orderResult.msg}</div>
       )}
     </div>
@@ -389,6 +504,7 @@ export default function App() {
   const [autoInterval, setAutoIntervalMin] = useState(15);
   const [notification, setNotification] = useState(null);
   const [tab, setTab] = useState("chart");
+  const [activeGroup, setActiveGroup] = useState("MAJOR"); // sidebar filter
 
   const wsRef = useRef(null);
   const demoInterval = useRef(null);
@@ -632,16 +748,27 @@ export default function App() {
       <div style={{display:"grid",gridTemplateColumns:"290px 1fr",gap:0,height:"calc(100vh - 57px)"}}>
 
         {/* ── LEFT PANEL ── */}
-        <div style={{borderRight:"1px solid #c9a84c11",overflowY:"auto",padding:10,display:"flex",flexDirection:"column",gap:6,background:"#0a0f1e"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4,padding:"0 4px"}}>
-            <span style={{color:"#c9a84c",fontSize:9,letterSpacing:3,fontWeight:700}}>MARKETS</span>
-            <button onClick={analyzeAll} style={{background:"#1a1200",border:"1px solid #c9a84c44",color:"#c9a84c",padding:"3px 10px",borderRadius:4,cursor:"pointer",fontSize:9,letterSpacing:1,fontFamily:"monospace"}}>⚡ AI ALL</button>
+        <div style={{borderRight:"1px solid #c9a84c11",overflowY:"auto",display:"flex",flexDirection:"column",background:"#0a0f1e"}}>
+          {/* Group filter tabs */}
+          <div style={{padding:"8px 8px 0",display:"flex",flexWrap:"wrap",gap:4,borderBottom:"1px solid #1e293b",paddingBottom:8}}>
+            {Object.keys(PAIR_GROUPS).map(g=>(
+              <button key={g} onClick={()=>setActiveGroup(g)} style={{
+                background: activeGroup===g?"#1a1200":"transparent",
+                border:`1px solid ${activeGroup===g?"#c9a84c":"#1e293b"}`,
+                color: activeGroup===g?"#c9a84c":"#475569",
+                padding:"2px 8px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace",letterSpacing:1,
+              }}>{g}</button>
+            ))}
+            <button onClick={analyzeAll} style={{marginLeft:"auto",background:"#1a1200",border:"1px solid #c9a84c44",color:"#c9a84c",padding:"2px 8px",borderRadius:3,cursor:"pointer",fontSize:9,letterSpacing:1,fontFamily:"monospace"}}>⚡ ALL</button>
           </div>
-          {PAIRS.map(p=>(
-            <PairCard key={p} symbol={p} tick={ticks[p]} candles={candles[p]}
-              analysis={analyses[p]} analyzing={analyzing[p]}
-              selected={selected===p} onSelect={setSelected} onAnalyze={handleAnalyze}/>
-          ))}
+          {/* Pair list filtered by group */}
+          <div style={{padding:8,display:"flex",flexDirection:"column",gap:5,overflowY:"auto",flex:1}}>
+            {(PAIR_GROUPS[activeGroup]||PAIRS).map(p=>(
+              <PairCard key={p} symbol={p} tick={ticks[p]} candles={candles[p]}
+                analysis={analyses[p]} analyzing={analyzing[p]}
+                selected={selected===p} onSelect={setSelected} onAnalyze={handleAnalyze}/>
+            ))}
+          </div>
         </div>
 
         {/* ── RIGHT PANEL ── */}
