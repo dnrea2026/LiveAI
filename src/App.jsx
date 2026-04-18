@@ -111,42 +111,44 @@ const DIGITS = {
   BTCUSD:2, ETHUSD:2, LTCUSD:2, XRPUSD:5, BNBUSD:2, SOLUSD:2, DOGEUSD:5, ADAUSD:5, DOTUSD:3, AVAXUSD:2, LINKUSD:3,
 };
 
-// Smart SL/TP defaults per instrument (in pips, Exness convention)
+// Smart SL/TP defaults per instrument — nilai dalam PIPS, berbasis ATR harian realistis
+// Ini hanya dipakai sebagai last-resort fallback jika AI GAGAL total
+// Forex: 1 pip = 0.0001 | JPY: 1 pip = 0.01 | XAUUSD: 1 pip = 0.1 | BTCUSD: 1 pip = $1
 const PAIR_SLTP = {
-  // Forex Majors  (1 pip = 0.0001)
-  EURUSD:{sl:80,tp:200},  GBPUSD:{sl:100,tp:250}, USDJPY:{sl:80,tp:200},
-  AUDUSD:{sl:80,tp:200},  USDCHF:{sl:80,tp:200},  USDCAD:{sl:80,tp:200}, NZDUSD:{sl:80,tp:200},
-  // Forex Minors
-  EURGBP:{sl:80,tp:200},  EURJPY:{sl:100,tp:250}, EURCHF:{sl:80,tp:200},
-  EURAUD:{sl:100,tp:250}, EURCAD:{sl:100,tp:250}, EURNZD:{sl:100,tp:250},
-  GBPJPY:{sl:150,tp:400}, GBPCHF:{sl:120,tp:300}, GBPAUD:{sl:150,tp:380},
-  GBPCAD:{sl:130,tp:330}, GBPNZD:{sl:150,tp:380},
-  AUDJPY:{sl:100,tp:250}, AUDCHF:{sl:80,tp:200},  AUDCAD:{sl:80,tp:200},  AUDNZD:{sl:80,tp:200},
-  CADJPY:{sl:100,tp:250}, CADCHF:{sl:80,tp:200},  CHFJPY:{sl:100,tp:250},
-  NZDJPY:{sl:100,tp:250}, NZDCHF:{sl:80,tp:200},  NZDCAD:{sl:80,tp:200},
+  // Forex Majors  — SL ~20-30 pip, TP ~40-60 pip
+  EURUSD:{sl:25,tp:50},  GBPUSD:{sl:30,tp:60},  USDJPY:{sl:25,tp:50},
+  AUDUSD:{sl:25,tp:50},  USDCHF:{sl:25,tp:50},  USDCAD:{sl:25,tp:50},  NZDUSD:{sl:25,tp:50},
+  // Forex Minors  — sedikit lebih lebar karena spread
+  EURGBP:{sl:25,tp:50},  EURJPY:{sl:30,tp:60},  EURCHF:{sl:25,tp:50},
+  EURAUD:{sl:35,tp:70},  EURCAD:{sl:35,tp:70},  EURNZD:{sl:35,tp:70},
+  GBPJPY:{sl:40,tp:80},  GBPCHF:{sl:35,tp:70},  GBPAUD:{sl:40,tp:80},
+  GBPCAD:{sl:35,tp:70},  GBPNZD:{sl:40,tp:80},
+  AUDJPY:{sl:30,tp:60},  AUDCHF:{sl:25,tp:50},  AUDCAD:{sl:25,tp:50},  AUDNZD:{sl:25,tp:50},
+  CADJPY:{sl:30,tp:60},  CADCHF:{sl:25,tp:50},  CHFJPY:{sl:30,tp:60},
+  NZDJPY:{sl:30,tp:60},  NZDCHF:{sl:25,tp:50},  NZDCAD:{sl:25,tp:50},
   // Exotics
-  USDZAR:{sl:300,tp:750}, USDMXN:{sl:300,tp:750}, USDNOK:{sl:200,tp:500},
-  USDSEK:{sl:200,tp:500}, USDSGD:{sl:150,tp:380}, USDCNH:{sl:200,tp:500},
-  USDTRY:{sl:400,tp:1000},USDHUF:{sl:300,tp:750}, USDPLN:{sl:200,tp:500},
-  EURNOK:{sl:200,tp:500}, EURSEK:{sl:200,tp:500}, EURTRY:{sl:400,tp:1000},
-  EURHUF:{sl:300,tp:750}, EURPLN:{sl:200,tp:500},
-  GBPTRY:{sl:500,tp:1200},GBPNOK:{sl:200,tp:500}, GBPSEK:{sl:200,tp:500},
-  // Metals  (XAUUSD: 1 pip=$0.01, SL 500 pip = $50/0.01lot)
-  XAUUSD:{sl:800,tp:2000}, XAGUSD:{sl:300,tp:750},
-  XPTUSD:{sl:500,tp:1250}, XPDUSD:{sl:600,tp:1500},
-  XAUEUR:{sl:800,tp:2000}, XAUGBP:{sl:800,tp:2000},
-  // Energy
-  USOIL:{sl:150,tp:380},  UKOIL:{sl:150,tp:380},  NATGAS:{sl:100,tp:250},
-  // Indices  (point-based)
-  US500:{sl:50,tp:125},   US30:{sl:300,tp:750},   US100:{sl:150,tp:375},
-  UK100:{sl:150,tp:375},  GER40:{sl:200,tp:500},  FRA40:{sl:150,tp:375},
-  JPN225:{sl:300,tp:750}, AUS200:{sl:100,tp:250},  HK50:{sl:200,tp:500},  STOXX50:{sl:100,tp:250},
-  // Crypto
-  BTCUSD:{sl:1500,tp:4000}, ETHUSD:{sl:200,tp:500},
-  LTCUSD:{sl:100,tp:250},   XRPUSD:{sl:150,tp:380},
-  BNBUSD:{sl:200,tp:500},   SOLUSD:{sl:200,tp:500},
-  DOGEUSD:{sl:150,tp:380},  ADAUSD:{sl:150,tp:380},
-  DOTUSD:{sl:150,tp:380},   AVAXUSD:{sl:200,tp:500}, LINKUSD:{sl:150,tp:380},
+  USDZAR:{sl:80,tp:160}, USDMXN:{sl:80,tp:160}, USDNOK:{sl:50,tp:100},
+  USDSEK:{sl:50,tp:100}, USDSGD:{sl:40,tp:80},  USDCNH:{sl:50,tp:100},
+  USDTRY:{sl:100,tp:200},USDHUF:{sl:80,tp:160}, USDPLN:{sl:50,tp:100},
+  EURNOK:{sl:50,tp:100}, EURSEK:{sl:50,tp:100}, EURTRY:{sl:100,tp:200},
+  EURHUF:{sl:80,tp:160}, EURPLN:{sl:50,tp:100},
+  GBPTRY:{sl:120,tp:240},GBPNOK:{sl:50,tp:100}, GBPSEK:{sl:50,tp:100},
+  // Metals — XAUUSD pip=0.1 → SL 150 pip = $15 jarak
+  XAUUSD:{sl:150,tp:300}, XAGUSD:{sl:80,tp:160},
+  XPTUSD:{sl:120,tp:240}, XPDUSD:{sl:150,tp:300},
+  XAUEUR:{sl:150,tp:300}, XAUGBP:{sl:150,tp:300},
+  // Energy — pip=0.01 → SL 50 pip = $0.50 jarak
+  USOIL:{sl:50,tp:100},  UKOIL:{sl:50,tp:100},  NATGAS:{sl:30,tp:60},
+  // Indices — pip=0.1 atau 1.0
+  US500:{sl:20,tp:40},   US30:{sl:80,tp:160},   US100:{sl:50,tp:100},
+  UK100:{sl:50,tp:100},  GER40:{sl:60,tp:120},  FRA40:{sl:50,tp:100},
+  JPN225:{sl:80,tp:160}, AUS200:{sl:40,tp:80},  HK50:{sl:60,tp:120},  STOXX50:{sl:40,tp:80},
+  // Crypto — BTCUSD pip=$1 → SL 300 pip = $300 jarak (realistis untuk M5)
+  BTCUSD:{sl:300,tp:600},  ETHUSD:{sl:30,tp:60},
+  LTCUSD:{sl:20,tp:40},    XRPUSD:{sl:30,tp:60},
+  BNBUSD:{sl:25,tp:50},    SOLUSD:{sl:25,tp:50},
+  DOGEUSD:{sl:30,tp:60},   ADAUSD:{sl:30,tp:60},
+  DOTUSD:{sl:30,tp:60},    AVAXUSD:{sl:25,tp:50},  LINKUSD:{sl:25,tp:50},
 };
 function getDefaultSLTP(symbol) {
   return PAIR_SLTP[symbol] || { sl:200, tp:500 };
@@ -1650,27 +1652,37 @@ export default function App() {
         setEaRunning(false); return;
       }
 
-      // Build SL/TP
+      // Build SL/TP — prioritas: AI price > AI pips kalkulasi > tabel fallback
       const lot = Math.min(eaConfig.defaultLot, eaConfig.maxLot);
       const useAi = eaConfig.useAiSLTP !== false;
-      const smartDefault = getDefaultSLTP(symbol);
       const entry = analysis.entry_price || ticks[symbol]?.bid || 0;
+      const pipSz = getPipSize(symbol);
+      const digs  = DIGITS[symbol] || 5;
 
       let slPips, tpPips, slPrice, tpPrice, slSource;
-      if (useAi && analysis.sl_pips > 0) {
-        slPips = analysis.sl_pips; tpPips = analysis.tp_pips;
-        slPrice = analysis.sl_price; tpPrice = analysis.tp_price;
-        slSource = "AI";
-      } else if (useAi) {
-        slPips = smartDefault.sl; tpPips = smartDefault.tp;
+
+      if (useAi && analysis.sl_price > 0 && analysis.tp2_price > 0) {
+        // BEST CASE: AI kasih price langsung — pakai apa adanya
+        slPrice  = analysis.sl_price;
+        tpPrice  = analysis.tp2_price;
+        slPips   = analysis.sl_pips  || Math.round(Math.abs(entry - slPrice) / pipSz);
+        tpPips   = analysis.tp2_pips || Math.round(Math.abs(entry - tpPrice) / pipSz);
+        slSource = "AI-price";
+      } else if (useAi && analysis.sl_pips > 0) {
+        // FALLBACK 1: AI kasih pips tapi tidak ada price — hitung price dari pips
+        slPips  = analysis.sl_pips;
+        tpPips  = analysis.tp2_pips || analysis.tp_pips || Math.round(slPips * 2);
         const calc = calcSLTP(symbol, analysis.signal, entry, slPips, tpPips);
         slPrice = calc.sl; tpPrice = calc.tp;
-        slSource = "SmartDefault";
+        slSource = "AI-pips";
       } else {
-        slPips = eaConfig.defaultSL; tpPips = eaConfig.defaultTP;
+        // FALLBACK 2 (last resort): tabel default — hanya jika AI gagal total
+        const smartDefault = getDefaultSLTP(symbol);
+        slPips  = smartDefault.sl; tpPips = smartDefault.tp;
         const calc = calcSLTP(symbol, analysis.signal, entry, slPips, tpPips);
         slPrice = calc.sl; tpPrice = calc.tp;
-        slSource = "Manual";
+        slSource = "Default";
+        addLog("WARN", `${symbol} → AI tidak ada SL/TP, pakai default fallback (${slPips}p/${tpPips}p)`);
       }
 
       const tp1P      = useAi ? (analysis.tp1_price||0) : tpPrice;
@@ -1731,15 +1743,20 @@ export default function App() {
     const entryAsk = tick?.ask || 0;
     const entryBid = tick?.bid || 0;
     const entryPrice = action === "BUY" ? entryAsk : entryBid;
-    const slPipsNum = parseFloat(slPips) || getDefaultSLTP(symbol).sl;
-    const tpPipsNum = parseFloat(tpPips) || getDefaultSLTP(symbol).tp;
-    const { sl: slCalc, tp: tp2Calc } = calcSLTP(symbol, action, entryPrice, slPipsNum, tpPipsNum);
-    const slPrice  = slPriceArg  && slPriceArg  > 0 ? slPriceArg  : slCalc;
-    const tp2Price = tp2PriceArg && tp2PriceArg > 0 ? tp2PriceArg : tp2Calc;
-    const tp1Price = tp1PriceArg && tp1PriceArg > 0 ? tp1PriceArg : 0;
-    const pipSz    = getPipSize(symbol);
-    const volNum   = parseFloat(volume);
-    const partLot  = partialLot || +(volNum * 0.5).toFixed(2);
+    const pipSz  = getPipSize(symbol);
+    const digs   = DIGITS[symbol] || 5;
+    const volNum = parseFloat(volume);
+    const partLot = partialLot || +(volNum * 0.5).toFixed(2);
+
+    // Gunakan price dari AI jika tersedia — hanya fallback ke pips jika price tidak ada
+    const slPrice  = slPriceArg  > 0 ? slPriceArg
+                   : (() => { const p = parseFloat(slPips)  || getDefaultSLTP(symbol).sl;  return action==="BUY" ? +(entryPrice - p*pipSz).toFixed(digs) : +(entryPrice + p*pipSz).toFixed(digs); })();
+    const tp2Price = tp2PriceArg > 0 ? tp2PriceArg
+                   : (() => { const p = parseFloat(tpPips)  || getDefaultSLTP(symbol).tp;  return action==="BUY" ? +(entryPrice + p*pipSz).toFixed(digs) : +(entryPrice - p*pipSz).toFixed(digs); })();
+    const tp1Price = tp1PriceArg > 0 ? tp1PriceArg : 0;
+
+    const slPipsNum = Math.round(Math.abs(entryPrice - slPrice)  / pipSz);
+    const tpPipsNum = Math.round(Math.abs(entryPrice - tp2Price) / pipSz);
 
     if (!demoMode && wsRef.current?.readyState === 1) {
       // Use actual broker symbol name (e.g. BTCUSDm instead of BTCUSD)
