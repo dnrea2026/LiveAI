@@ -1,40 +1,186 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-const PAIRS = ["EURUSD","GBPUSD","USDJPY","AUDUSD","USDCHF","BTCUSD","ETHUSD"];
-const PAIR_FLAGS = { EURUSD:"🇪🇺🇺🇸", GBPUSD:"🇬🇧🇺🇸", USDJPY:"🇺🇸🇯🇵", AUDUSD:"🇦🇺🇺🇸", USDCHF:"🇺🇸🇨🇭", BTCUSD:"₿🇺🇸", ETHUSD:"Ξ🇺🇸" };
-const PAIR_NAMES = { EURUSD:"Euro / Dollar", GBPUSD:"Pound / Dollar", USDJPY:"Dollar / Yen", AUDUSD:"Aussie / Dollar", USDCHF:"Dollar / Franc", BTCUSD:"Bitcoin / Dollar", ETHUSD:"Ethereum / Dollar" };
+// ===================== PAIR CATEGORIES (Exness Full List) =====================
+const PAIR_CATEGORIES = {
+  "Majors":   ["EURUSD","GBPUSD","USDJPY","AUDUSD","USDCHF","USDCAD","NZDUSD"],
+  "Minors":   ["EURGBP","EURJPY","EURCHF","EURAUD","EURCAD","EURNZD","GBPJPY","GBPCHF","GBPAUD","GBPCAD","GBPNZD","AUDJPY","AUDCHF","AUDCAD","AUDNZD","CADJPY","CADCHF","CHFJPY","NZDJPY","NZDCHF","NZDCAD"],
+  "Exotics":  ["USDZAR","USDMXN","USDNOK","USDSEK","USDSGD","USDCNH","USDTRY","USDHUF","USDPLN","EURNOK","EURSEK","EURTRY","EURHUF","EURPLN","GBPTRY","GBPNOK","GBPSEK"],
+  "Metals":   ["XAUUSD","XAGUSD","XPTUSD","XPDUSD","XAUEUR","XAUGBP"],
+  "Energy":   ["USOIL","UKOIL","NATGAS"],
+  "Indices":  ["US500","US30","US100","UK100","GER40","FRA40","JPN225","AUS200","HK50","STOXX50"],
+  "Crypto":   ["BTCUSD","ETHUSD","LTCUSD","XRPUSD","BNBUSD","SOLUSD","DOGEUSD","ADAUSD","DOTUSD","AVAXUSD","LINKUSD"],
+};
+const PAIRS = Object.values(PAIR_CATEGORIES).flat();
+
+const PAIR_FLAGS = {
+  // Majors
+  EURUSD:"🇪🇺🇺🇸", GBPUSD:"🇬🇧🇺🇸", USDJPY:"🇺🇸🇯🇵", AUDUSD:"🇦🇺🇺🇸", USDCHF:"🇺🇸🇨🇭", USDCAD:"🇺🇸🇨🇦", NZDUSD:"🇳🇿🇺🇸",
+  // Minors
+  EURGBP:"🇪🇺🇬🇧", EURJPY:"🇪🇺🇯🇵", EURCHF:"🇪🇺🇨🇭", EURAUD:"🇪🇺🇦🇺", EURCAD:"🇪🇺🇨🇦", EURNZD:"🇪🇺🇳🇿",
+  GBPJPY:"🇬🇧🇯🇵", GBPCHF:"🇬🇧🇨🇭", GBPAUD:"🇬🇧🇦🇺", GBPCAD:"🇬🇧🇨🇦", GBPNZD:"🇬🇧🇳🇿",
+  AUDJPY:"🇦🇺🇯🇵", AUDCHF:"🇦🇺🇨🇭", AUDCAD:"🇦🇺🇨🇦", AUDNZD:"🇦🇺🇳🇿",
+  CADJPY:"🇨🇦🇯🇵", CADCHF:"🇨🇦🇨🇭", CHFJPY:"🇨🇭🇯🇵",
+  NZDJPY:"🇳🇿🇯🇵", NZDCHF:"🇳🇿🇨🇭", NZDCAD:"🇳🇿🇨🇦",
+  // Exotics
+  USDZAR:"🇺🇸🇿🇦", USDMXN:"🇺🇸🇲🇽", USDNOK:"🇺🇸🇳🇴", USDSEK:"🇺🇸🇸🇪", USDSGD:"🇺🇸🇸🇬", USDCNH:"🇺🇸🇨🇳",
+  USDTRY:"🇺🇸🇹🇷", USDHUF:"🇺🇸🇭🇺", USDPLN:"🇺🇸🇵🇱",
+  EURNOK:"🇪🇺🇳🇴", EURSEK:"🇪🇺🇸🇪", EURTRY:"🇪🇺🇹🇷", EURHUF:"🇪🇺🇭🇺", EURPLN:"🇪🇺🇵🇱",
+  GBPTRY:"🇬🇧🇹🇷", GBPNOK:"🇬🇧🇳🇴", GBPSEK:"🇬🇧🇸🇪",
+  // Metals
+  XAUUSD:"🥇🇺🇸", XAGUSD:"🥈🇺🇸", XPTUSD:"⬜🇺🇸", XPDUSD:"🔘🇺🇸", XAUEUR:"🥇🇪🇺", XAUGBP:"🥇🇬🇧",
+  // Energy
+  USOIL:"🛢️🇺🇸", UKOIL:"🛢️🇬🇧", NATGAS:"🔥🇺🇸",
+  // Indices
+  US500:"📊🇺🇸", US30:"📈🇺🇸", US100:"💻🇺🇸", UK100:"📊🇬🇧", GER40:"📊🇩🇪", FRA40:"📊🇫🇷", JPN225:"📊🇯🇵", AUS200:"📊🇦🇺", HK50:"📊🇭🇰", STOXX50:"📊🇪🇺",
+  // Crypto
+  BTCUSD:"₿🇺🇸", ETHUSD:"Ξ🇺🇸", LTCUSD:"Ł🇺🇸", XRPUSD:"✕🇺🇸", BNBUSD:"🔶🇺🇸", SOLUSD:"◎🇺🇸", DOGEUSD:"🐕🇺🇸", ADAUSD:"🔵🇺🇸", DOTUSD:"⚫🇺🇸", AVAXUSD:"🔺🇺🇸", LINKUSD:"🔗🇺🇸",
+};
+
+const PAIR_NAMES = {
+  // Majors
+  EURUSD:"Euro / Dollar", GBPUSD:"Pound / Dollar", USDJPY:"Dollar / Yen", AUDUSD:"Aussie / Dollar", USDCHF:"Dollar / Franc", USDCAD:"Dollar / Canadian", NZDUSD:"Kiwi / Dollar",
+  // Minors
+  EURGBP:"Euro / Pound", EURJPY:"Euro / Yen", EURCHF:"Euro / Franc", EURAUD:"Euro / Aussie", EURCAD:"Euro / Canadian", EURNZD:"Euro / Kiwi",
+  GBPJPY:"Pound / Yen", GBPCHF:"Pound / Franc", GBPAUD:"Pound / Aussie", GBPCAD:"Pound / Canadian", GBPNZD:"Pound / Kiwi",
+  AUDJPY:"Aussie / Yen", AUDCHF:"Aussie / Franc", AUDCAD:"Aussie / Canadian", AUDNZD:"Aussie / Kiwi",
+  CADJPY:"Canadian / Yen", CADCHF:"Canadian / Franc", CHFJPY:"Franc / Yen",
+  NZDJPY:"Kiwi / Yen", NZDCHF:"Kiwi / Franc", NZDCAD:"Kiwi / Canadian",
+  // Exotics
+  USDZAR:"Dollar / Rand", USDMXN:"Dollar / Peso", USDNOK:"Dollar / Krone", USDSEK:"Dollar / Krona", USDSGD:"Dollar / Singapore", USDCNH:"Dollar / Yuan",
+  USDTRY:"Dollar / Lira", USDHUF:"Dollar / Forint", USDPLN:"Dollar / Zloty",
+  EURNOK:"Euro / Krone", EURSEK:"Euro / Krona", EURTRY:"Euro / Lira", EURHUF:"Euro / Forint", EURPLN:"Euro / Zloty",
+  GBPTRY:"Pound / Lira", GBPNOK:"Pound / Krone", GBPSEK:"Pound / Krona",
+  // Metals
+  XAUUSD:"Gold / Dollar", XAGUSD:"Silver / Dollar", XPTUSD:"Platinum / Dollar", XPDUSD:"Palladium / Dollar", XAUEUR:"Gold / Euro", XAUGBP:"Gold / Pound",
+  // Energy
+  USOIL:"WTI Crude Oil", UKOIL:"Brent Crude Oil", NATGAS:"Natural Gas",
+  // Indices
+  US500:"S&P 500", US30:"Dow Jones", US100:"NASDAQ 100", UK100:"FTSE 100", GER40:"DAX 40", FRA40:"CAC 40", JPN225:"Nikkei 225", AUS200:"ASX 200", HK50:"Hang Seng 50", STOXX50:"Euro Stoxx 50",
+  // Crypto
+  BTCUSD:"Bitcoin / Dollar", ETHUSD:"Ethereum / Dollar", LTCUSD:"Litecoin / Dollar", XRPUSD:"Ripple / Dollar", BNBUSD:"BNB / Dollar", SOLUSD:"Solana / Dollar", DOGEUSD:"Dogecoin / Dollar", ADAUSD:"Cardano / Dollar", DOTUSD:"Polkadot / Dollar", AVAXUSD:"Avalanche / Dollar", LINKUSD:"Chainlink / Dollar",
+};
+
 const TIMEFRAMES = ["M1","M5","M15","H1","H4","D1"];
-const BASE_PRICES = { EURUSD:1.0845, GBPUSD:1.2734, USDJPY:154.21, AUDUSD:0.6412, USDCHF:0.9023, BTCUSD:77071.22, ETHUSD:2419.93 };
-const DIGITS = { EURUSD:5, GBPUSD:5, USDJPY:3, AUDUSD:5, USDCHF:5, BTCUSD:2, ETHUSD:2 };
+
+const BASE_PRICES = {
+  // Majors
+  EURUSD:1.0845, GBPUSD:1.2734, USDJPY:154.21, AUDUSD:0.6412, USDCHF:0.9023, USDCAD:1.3582, NZDUSD:0.5882,
+  // Minors
+  EURGBP:0.8516, EURJPY:167.15, EURCHF:0.9778, EURAUD:1.6912, EURCAD:1.4723, EURNZD:1.8435,
+  GBPJPY:196.38, GBPCHF:1.1484, GBPAUD:1.9858, GBPCAD:1.7282, GBPNZD:2.1645,
+  AUDJPY:98.84, AUDCHF:0.5782, AUDCAD:0.8717, AUDNZD:1.0894,
+  CADJPY:113.56, CADCHF:0.6640, CHFJPY:171.05,
+  NZDJPY:90.68, NZDCHF:0.5313, NZDCAD:0.8054,
+  // Exotics
+  USDZAR:18.24, USDMXN:17.32, USDNOK:10.58, USDSEK:10.32, USDSGD:1.342, USDCNH:7.240,
+  USDTRY:35.80, USDHUF:368.50, USDPLN:3.985,
+  EURNOK:11.47, EURSEK:11.20, EURTRY:38.82, EURHUF:399.50, EURPLN:4.320,
+  GBPTRY:45.62, GBPNOK:13.48, GBPSEK:13.16,
+  // Metals
+  XAUUSD:2320.50, XAGUSD:27.45, XPTUSD:982.00, XPDUSD:1048.00, XAUEUR:2139.20, XAUGBP:1824.80,
+  // Energy
+  USOIL:82.50, UKOIL:87.20, NATGAS:2.145,
+  // Indices
+  US500:5248.50, US30:38850.00, US100:18245.00, UK100:8215.00, GER40:17820.00, FRA40:7985.00, JPN225:38250.00, AUS200:7845.00, HK50:17520.00, STOXX50:4985.00,
+  // Crypto
+  BTCUSD:77071.22, ETHUSD:2419.93, LTCUSD:84.50, XRPUSD:0.5215, BNBUSD:382.50, SOLUSD:155.40, DOGEUSD:0.18420, ADAUSD:0.45120, DOTUSD:6.850, AVAXUSD:28.45, LINKUSD:13.25,
+};
+
+const DIGITS = {
+  // Majors
+  EURUSD:5, GBPUSD:5, USDJPY:3, AUDUSD:5, USDCHF:5, USDCAD:5, NZDUSD:5,
+  // Minors
+  EURGBP:5, EURJPY:3, EURCHF:5, EURAUD:5, EURCAD:5, EURNZD:5,
+  GBPJPY:3, GBPCHF:5, GBPAUD:5, GBPCAD:5, GBPNZD:5,
+  AUDJPY:3, AUDCHF:5, AUDCAD:5, AUDNZD:5,
+  CADJPY:3, CADCHF:5, CHFJPY:3,
+  NZDJPY:3, NZDCHF:5, NZDCAD:5,
+  // Exotics
+  USDZAR:5, USDMXN:5, USDNOK:5, USDSEK:5, USDSGD:5, USDCNH:5,
+  USDTRY:3, USDHUF:3, USDPLN:5,
+  EURNOK:5, EURSEK:5, EURTRY:3, EURHUF:3, EURPLN:5,
+  GBPTRY:3, GBPNOK:5, GBPSEK:5,
+  // Metals
+  XAUUSD:2, XAGUSD:3, XPTUSD:2, XPDUSD:2, XAUEUR:2, XAUGBP:2,
+  // Energy
+  USOIL:2, UKOIL:2, NATGAS:3,
+  // Indices
+  US500:2, US30:2, US100:2, UK100:2, GER40:2, FRA40:2, JPN225:2, AUS200:2, HK50:2, STOXX50:2,
+  // Crypto
+  BTCUSD:2, ETHUSD:2, LTCUSD:2, XRPUSD:5, BNBUSD:2, SOLUSD:2, DOGEUSD:5, ADAUSD:5, DOTUSD:3, AVAXUSD:2, LINKUSD:3,
+};
+
+// Helper: volatility per pair type
+function getPairVolatility(symbol) {
+  if (["BTCUSD"].includes(symbol)) return 80;
+  if (["ETHUSD","BNBUSD","SOLUSD","AVAXUSD"].includes(symbol)) return 5;
+  if (["LTCUSD","DOTUSD","LINKUSD"].includes(symbol)) return 1.5;
+  if (["DOGEUSD","ADAUSD"].includes(symbol)) return 0.005;
+  if (["XRPUSD"].includes(symbol)) return 0.008;
+  if (["XAUUSD","XAUEUR","XAUGBP"].includes(symbol)) return 2.5;
+  if (["XAGUSD"].includes(symbol)) return 0.15;
+  if (["XPTUSD","XPDUSD"].includes(symbol)) return 3.0;
+  if (["USOIL","UKOIL"].includes(symbol)) return 0.4;
+  if (["NATGAS"].includes(symbol)) return 0.02;
+  if (["US500","AUS200","STOXX50"].includes(symbol)) return 8;
+  if (["US30","GER40","JPN225"].includes(symbol)) return 80;
+  if (["US100","FRA40"].includes(symbol)) return 40;
+  if (["UK100","HK50"].includes(symbol)) return 25;
+  if (symbol.includes("JPY") || symbol.includes("HUF")) return 0.15;
+  if (["USDZAR","USDMXN","USDTRY","EURTRY","GBPTRY"].includes(symbol)) return 0.05;
+  if (["USDNOK","USDSEK","EURNOK","EURSEK","GBPNOK","GBPSEK"].includes(symbol)) return 0.02;
+  return 0.0008;
+}
+
+function getPairSpread(symbol) {
+  if (symbol === "BTCUSD") return 9.80;
+  if (["ETHUSD","BNBUSD"].includes(symbol)) return 0.8;
+  if (["SOLUSD","AVAXUSD","LTCUSD"].includes(symbol)) return 0.5;
+  if (["DOGEUSD","ADAUSD","XRPUSD"].includes(symbol)) return 0.00050;
+  if (["DOTUSD","LINKUSD"].includes(symbol)) return 0.02;
+  if (["XAUUSD","XAUEUR","XAUGBP"].includes(symbol)) return 0.30;
+  if (["XAGUSD"].includes(symbol)) return 0.03;
+  if (["XPTUSD","XPDUSD"].includes(symbol)) return 1.50;
+  if (["USOIL","UKOIL"].includes(symbol)) return 0.05;
+  if (["NATGAS"].includes(symbol)) return 0.005;
+  if (["US100","US500"].includes(symbol)) return 1.0;
+  if (["US30","GER40","JPN225"].includes(symbol)) return 3.0;
+  if (["UK100","FRA40","AUS200","HK50","STOXX50"].includes(symbol)) return 2.0;
+  if (symbol.includes("JPY") || symbol.includes("HUF")) return 0.02;
+  if (["USDTRY","EURTRY","GBPTRY"].includes(symbol)) return 0.05;
+  if (["USDZAR","USDMXN"].includes(symbol)) return 0.008;
+  return 0.00012;
+}
 
 // ===================== MOCK DATA =====================
 function generateMockCandles(symbol, count=80) {
-  const base = BASE_PRICES[symbol];
-  const isCrypto = ["BTCUSD","ETHUSD"].includes(symbol);
-  const volatility = symbol==="USDJPY" ? 0.15 : isCrypto ? (symbol==="BTCUSD" ? 80 : 5) : 0.0008;
+  const base = BASE_PRICES[symbol] || 1;
+  const volatility = getPairVolatility(symbol);
+  const digits = DIGITS[symbol] || 5;
   const data = [];
   let price = base;
   const now = Date.now();
   for (let i = count; i >= 0; i--) {
     const change = (Math.random()-0.49)*volatility;
     const open = price;
-    price += change;
+    price = Math.max(price + change, base * 0.5); // prevent negative
     const high = Math.max(open, price) + Math.random()*volatility*0.5;
-    const low = Math.min(open, price) - Math.random()*volatility*0.5;
-    data.push({ time: new Date(now - i*5*60000).toISOString(), open:+open.toFixed(DIGITS[symbol]), high:+high.toFixed(DIGITS[symbol]), low:+low.toFixed(DIGITS[symbol]), close:+price.toFixed(DIGITS[symbol]), volume:Math.floor(Math.random()*2000+500) });
+    const low  = Math.min(open, price) - Math.random()*volatility*0.5;
+    data.push({ time: new Date(now - i*5*60000).toISOString(), open:+open.toFixed(digits), high:+high.toFixed(digits), low:+low.toFixed(digits), close:+price.toFixed(digits), volume:Math.floor(Math.random()*2000+500) });
   }
   return data;
 }
 
 function generateMockTick(symbol, prev) {
-  const base = prev?.bid || BASE_PRICES[symbol];
-  const isCrypto = ["BTCUSD","ETHUSD"].includes(symbol);
-  const vol = symbol==="USDJPY" ? 0.03 : isCrypto ? (symbol==="BTCUSD" ? 10 : 0.5) : 0.00015;
-  const bid = +(base + (Math.random()-0.49)*vol).toFixed(DIGITS[symbol]);
-  const spread = symbol==="USDJPY" ? 0.02 : isCrypto ? (symbol==="BTCUSD" ? 9.80 : 0.8) : 0.00012;
-  const ask = +(bid + spread).toFixed(DIGITS[symbol]);
-  return { symbol, bid, ask, spread: isCrypto ? (symbol==="BTCUSD" ? 980 : 80) : (symbol==="USDJPY" ? 2 : 1.2), time: new Date().toISOString(), digits: DIGITS[symbol] };
+  const base = prev?.bid || BASE_PRICES[symbol] || 1;
+  const vol = getPairVolatility(symbol) * 0.2;
+  const spread = getPairSpread(symbol);
+  const digits = DIGITS[symbol] || 5;
+  const bid = +(Math.max(base + (Math.random()-0.49)*vol, 0.00001)).toFixed(digits);
+  const ask = +(bid + spread).toFixed(digits);
+  const spreadPips = +(spread * Math.pow(10, digits <= 3 ? digits : digits-1)).toFixed(1);
+  return { symbol, bid, ask, spread: spreadPips, time: new Date().toISOString(), digits };
 }
 
 // ===================== AI ANALYSIS =====================
@@ -376,17 +522,56 @@ function PairCard({ symbol, tick, candles, analysis, mtfData, selected, analyzin
 }
 
 // EA LOG
+const LOG_COLORS = { TRADE:"#4ade80", ERROR:"#f87171", WARN:"#fb923c", INFO:"#475569", AI:"#06b6d4", SYSTEM:"#a78bfa" };
+const LOG_ICONS  = { TRADE:"💰", ERROR:"❌", WARN:"⚠️", INFO:"ℹ️", AI:"🤖", SYSTEM:"⚙️" };
+
 function EALog({ logs }) {
   const ref = useRef(null);
   useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [logs]);
+  const counts = logs.reduce((a,l)=>{ a[l.type]=(a[l.type]||0)+1; return a; }, {});
   return (
-    <div ref={ref} style={{background:"#030712",border:"1px solid #0f172a",borderRadius:8,padding:12,height:180,overflowY:"auto",fontFamily:"monospace",fontSize:11}}>
-      {logs.length === 0 && <div style={{color:"#1e293b"}}>EA log kosong...</div>}
-      {logs.map((log,i)=>(
-        <div key={i} style={{marginBottom:3,color:log.type==="TRADE"?"#4ade80":log.type==="ERROR"?"#f87171":log.type==="WARN"?"#fb923c":"#475569"}}>
-          <span style={{color:"#1e3a5f"}}>[{log.time}]</span> <span style={{color:"#334155"}}>[{log.type}]</span> {log.msg}
-        </div>
-      ))}
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {/* Summary bar */}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {Object.entries(LOG_COLORS).map(([type,color])=>(
+          <div key={type} style={{background:"#0a0f1e",border:`1px solid #1e293b`,borderRadius:6,padding:"4px 10px",display:"flex",gap:6,alignItems:"center"}}>
+            <span style={{fontSize:11}}>{LOG_ICONS[type]}</span>
+            <span style={{color:"#334155",fontSize:10,fontFamily:"monospace"}}>{type}</span>
+            <span style={{color,fontFamily:"monospace",fontWeight:700,fontSize:12}}>{counts[type]||0}</span>
+          </div>
+        ))}
+      </div>
+      {/* Log entries */}
+      <div ref={ref} style={{background:"#030712",border:"1px solid #0f172a",borderRadius:8,padding:"10px 12px",height:380,overflowY:"auto",fontFamily:"monospace",fontSize:11}}>
+        {logs.length === 0 && (
+          <div style={{color:"#1e3a5f",textAlign:"center",paddingTop:40}}>
+            <div style={{fontSize:24,marginBottom:8}}>📋</div>
+            <div>EA log kosong — tekan START EA untuk mulai</div>
+          </div>
+        )}
+        {[...logs].reverse().map((log,i)=>{
+          const color = LOG_COLORS[log.type]||"#475569";
+          const icon  = LOG_ICONS[log.type]||"·";
+          const isTrade = log.type==="TRADE";
+          return (
+            <div key={i} style={{
+              marginBottom:4, padding:"5px 8px", borderRadius:4,
+              background: isTrade ? "#052e1620" : i===0 ? "#0f172a" : "transparent",
+              borderLeft: `2px solid ${isTrade?"#16a34a":color+"40"}`,
+              display:"flex", gap:8, alignItems:"flex-start"
+            }}>
+              <span style={{fontSize:12,flexShrink:0}}>{icon}</span>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:1}}>
+                  <span style={{color:"#1e3a5f",fontSize:10}}>{log.time}</span>
+                  <span style={{color,fontSize:9,fontWeight:700,letterSpacing:1,background:color+"15",padding:"0 5px",borderRadius:3}}>{log.type}</span>
+                </div>
+                <span style={{color: isTrade?"#86efac":color,fontSize:11}}>{log.msg}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -434,6 +619,89 @@ function PositionsTable({ positions, onClose }) {
   );
 }
 
+// EA LOG TAB (full featured)
+function EALogTab({ logs, setLogs, eaRunning, eaConfig, positions, eaStats, account }) {
+  const [countdown, setCountdown] = useState(0);
+  const [scanCount, setScanCount] = useState(0);
+  const timerRef = useRef(null);
+  const startRef = useRef(null);
+
+  useEffect(() => {
+    if (!eaRunning) { setCountdown(0); clearInterval(timerRef.current); return; }
+    startRef.current = Date.now();
+    setScanCount(c=>c+1);
+    setCountdown(eaConfig.autoInterval/1000);
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      const elapsed = (Date.now()-startRef.current)/1000;
+      const remaining = Math.max(0, eaConfig.autoInterval/1000 - elapsed);
+      setCountdown(Math.ceil(remaining));
+      if (remaining <= 0) { startRef.current = Date.now(); setScanCount(c=>c+1); setCountdown(eaConfig.autoInterval/1000); }
+    }, 500);
+    return () => clearInterval(timerRef.current);
+  }, [eaRunning, eaConfig.autoInterval]);
+
+  const interval = eaConfig.autoInterval/1000;
+  const progress = eaRunning ? ((interval - countdown)/interval)*100 : 0;
+  const winRate = eaStats.totalTrades>0 ? ((eaStats.winTrades/eaStats.totalTrades)*100).toFixed(1) : "0.0";
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {/* Live Status Panel */}
+      <div style={{background:"#070e1d",border:`1px solid ${eaRunning?"#15803d":"#1e293b"}`,borderRadius:10,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:10,height:10,borderRadius:"50%",background:eaRunning?"#4ade80":"#334155",boxShadow:eaRunning?"0 0 10px #4ade80":undefined}}/>
+            <span style={{color:eaRunning?"#4ade80":"#475569",fontFamily:"monospace",fontWeight:700,fontSize:13,letterSpacing:2}}>
+              EA {eaRunning?"RUNNING":"STOPPED"}
+            </span>
+            {eaRunning && <span style={{color:"#334155",fontSize:11,fontFamily:"monospace"}}>Scan #{scanCount}</span>}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setLogs([])} style={{background:"#0f172a",border:"1px solid #1e293b",color:"#475569",padding:"3px 10px",borderRadius:4,cursor:"pointer",fontSize:10,fontFamily:"monospace"}}>🗑 Clear Log</button>
+            <span style={{color:"#475569",fontSize:10,fontFamily:"monospace",alignSelf:"center"}}>{logs.length} entries</span>
+          </div>
+        </div>
+
+        {/* Progress bar - countdown to next scan */}
+        {eaRunning && (
+          <div style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{color:"#334155",fontSize:10,fontFamily:"monospace"}}>NEXT SCAN IN</span>
+              <span style={{color:"#06b6d4",fontSize:11,fontFamily:"monospace",fontWeight:700}}>{countdown}s / {interval}s</span>
+            </div>
+            <div style={{background:"#0a0f1e",borderRadius:4,height:6,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${progress}%`,background:"linear-gradient(90deg,#1d4ed8,#06b6d4)",borderRadius:4,transition:"width 0.5s linear"}}/>
+            </div>
+          </div>
+        )}
+
+        {/* Stats grid */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+          {[
+            ["Total Scan",scanCount,"#06b6d4"],
+            ["Posisi",`${positions.length}/${eaConfig.maxOpenTrades}`,"#94a3b8"],
+            ["Win Rate",`${winRate}%`,"#4ade80"],
+            ["P&L",`${account?.profit>=0?"+":""}${account?.profit?.toFixed(2)||"0"}`,account?.profit>=0?"#4ade80":"#f87171"],
+            ["Trades",eaStats.totalTrades,"#94a3b8"],
+            ["Win",eaStats.winTrades,"#4ade80"],
+            ["Loss",eaStats.lossTrades,"#f87171"],
+            ["Interval",`${interval}s`,"#a78bfa"],
+          ].map(([k,v,c])=>(
+            <div key={k} style={{background:"#0a0f1e",border:"1px solid #0f172a",borderRadius:6,padding:"6px 8px",textAlign:"center"}}>
+              <div style={{color:"#334155",fontSize:9,letterSpacing:1,marginBottom:2}}>{k}</div>
+              <div style={{color:c,fontFamily:"monospace",fontWeight:700,fontSize:12}}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Log entries */}
+      <EALog logs={logs}/>
+    </div>
+  );
+}
+
 // ===================== MAIN APP =====================
 export default function App() {
   const [wsUrl, setWsUrl] = useState("ws://localhost:8765");
@@ -458,6 +726,8 @@ export default function App() {
     mtfFilter: "OFF", autoInterval: 60000
   });
   const [activeEAPairs, setActiveEAPairs] = useState(["BTCUSD","ETHUSD"]);
+  const [pairCategory, setPairCategory] = useState("Majors");
+  const [pairSearch, setPairSearch] = useState("");
 
   const wsRef = useRef(null);
   const demoInterval = useRef(null);
@@ -500,22 +770,94 @@ export default function App() {
     wsRef.current = ws;
     ws.onopen = () => {
       setWsStatus("connected"); setDemoMode(false); clearInterval(demoInterval.current);
+      addLog("SYSTEM", `✅ Terhubung ke MT5 Bridge: ${wsUrl}`);
+      // Request data awal
+      ws.send(JSON.stringify({type:"get_account"}));
+      ws.send(JSON.stringify({type:"get_positions"}));
       PAIRS.forEach(p => ws.send(JSON.stringify({type:"get_candles",symbol:p,timeframe,count:100})));
+      // Sync posisi berkala setiap 5 detik
+      if (window._posSync) clearInterval(window._posSync);
+      window._posSync = setInterval(() => {
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({type:"get_positions"}));
+          ws.send(JSON.stringify({type:"get_account"}));
+        }
+      }, 5000);
     };
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
-        if (msg.type==="ticks") setTicks(prev=>({...prev,...msg.data}));
-        else if (msg.type==="candles") setCandles(prev=>({...prev,[msg.symbol]:msg.data}));
-        else if (msg.type==="account"||msg.type==="init") { setPositions(msg.positions||[]); setAccount(msg.account); }
-        else if (msg.type==="order_result") {
-          if (msg.success) { addLog("TRADE",`Order berhasil — Ticket #${msg.ticket} @ ${msg.price}`); setEaStats(p=>({...p,totalTrades:p.totalTrades+1,todayTrades:p.todayTrades+1})); }
-          else addLog("ERROR",`Order gagal: ${msg.error}`);
+
+        // Tick data
+        if (msg.type==="ticks") {
+          setTicks(prev=>({...prev,...msg.data}));
+
+        // Candle data
+        } else if (msg.type==="candles") {
+          setCandles(prev=>({...prev,[msg.symbol]:msg.data}));
+
+        // Account / init / positions sync
+        } else if (["account","init","positions_update","update"].includes(msg.type)) {
+          if (msg.positions) setPositions(msg.positions);
+          if (msg.account)   setAccount(msg.account);
+
+        // Order success — handle SEMUA format bridge yang mungkin
+        } else if (
+          msg.type==="order_result" ||
+          msg.type==="order_sent"   ||
+          msg.type==="trade_result" ||
+          msg.type==="order"        ||
+          msg.type==="trade"
+        ) {
+          // Deteksi sukses: cek semua field yang mungkin dari berbagai versi bridge
+          const isSuccess = msg.success === true
+            || msg.retcode === 10009   // MT5 TRADE_RETCODE_DONE
+            || msg.retcode === 0
+            || (msg.ticket && msg.ticket > 0)
+            || msg.status === "ok"
+            || msg.status === "success"
+            || msg.result === "ok";
+
+          const ticket  = msg.ticket  || msg.order   || "—";
+          const price   = msg.price   || msg.deal_price || msg.entry || "—";
+          const errMsg  = msg.error   || msg.comment  || msg.retcode || "Unknown";
+
+          if (isSuccess) {
+            addLog("TRADE", `✅ ORDER SUKSES — Ticket #${ticket} @ ${price}`);
+            setEaStats(p=>({...p, totalTrades:p.totalTrades+1, todayTrades:p.todayTrades+1}));
+            // Minta sync posisi terbaru dari MT5
+            if (ws.readyState === 1) ws.send(JSON.stringify({type:"get_positions"}));
+          } else {
+            addLog("ERROR", `❌ ORDER GAGAL — ${errMsg} (retcode: ${msg.retcode||"?"})`);
+          }
+
+        // Close position result
+        } else if (msg.type==="close_result" || msg.type==="position_closed") {
+          if (msg.success || msg.ticket) {
+            addLog("TRADE", `✅ POSISI DITUTUP — Ticket #${msg.ticket||"?"} | P&L: ${msg.profit>=0?"+":""}${msg.profit?.toFixed(2)||"?"}`);
+            if (msg.profit !== undefined) {
+              const pnl = parseFloat(msg.profit)||0;
+              setEaStats(p=>({...p, totalPnL:p.totalPnL+pnl, winTrades:pnl>0?p.winTrades+1:p.winTrades, lossTrades:pnl<0?p.lossTrades+1:p.lossTrades}));
+            }
+            if (ws.readyState === 1) ws.send(JSON.stringify({type:"get_positions"}));
+          }
+
+        // Debug: log pesan yang tidak dikenali agar mudah diagnosa
+        } else {
+          addLog("WARN", `MSG TIDAK DIKENAL: type="${msg.type}" — ${JSON.stringify(msg).slice(0,120)}`);
         }
-      } catch {}
+
+      } catch(err) {
+        addLog("ERROR", `Parse WebSocket error: ${err.message}`);
+      }
     };
     ws.onerror = () => setWsStatus("error");
-    ws.onclose = () => { setWsStatus("disconnected"); startDemo(); };
+    ws.onclose = () => {
+      setWsStatus("disconnected");
+      addLog("WARN", "WebSocket terputus dari MT5 Bridge");
+      clearInterval(window._posSync);
+      startDemo();
+    };
   }, [wsUrl, timeframe, startDemo, addLog]);
 
   const disconnect = () => { wsRef.current?.close(); setWsStatus("disconnected"); startDemo(); };
@@ -540,16 +882,27 @@ export default function App() {
   // EA AUTO EXECUTE
   const executeEA = useCallback(async () => {
     if (!eaRunning) return;
-    addLog("INFO", `EA scan ${activeEAPairs.length} pair...`);
+    const scanStart = Date.now();
+    addLog("SYSTEM", `━━━ SCAN MULAI — ${activeEAPairs.length} pair aktif [${activeEAPairs.join(", ")}] ━━━`);
+
+    let executed = 0, skipped = 0, waited = 0;
 
     for (const symbol of activeEAPairs) {
+      addLog("AI", `Menganalisis ${symbol}... (Groq AI)`);
       const analysis = await handleAnalyze(symbol);
-      if (!analysis || analysis.signal === "WAIT") { addLog("INFO", `${symbol}: WAIT`); continue; }
+
+      if (!analysis || analysis.signal === "WAIT") {
+        addLog("INFO", `${symbol} → WAIT | Trend: ${analysis?.trend||"—"} | ${analysis?.summary?.slice(0,50)||""}...`);
+        waited++; continue;
+      }
 
       // Confidence filter
       const confLevel = { HIGH:3, MEDIUM:2, LOW:1 };
       const minConf = confLevel[eaConfig.minConfidence] || 2;
-      if (confLevel[analysis.confidence] < minConf) { addLog("WARN", `${symbol}: ${analysis.signal} — confidence terlalu rendah (${analysis.confidence})`); continue; }
+      if (confLevel[analysis.confidence] < minConf) {
+        addLog("WARN", `${symbol} → ${analysis.signal} DITOLAK — Confidence ${analysis.confidence} < min ${eaConfig.minConfidence}`);
+        skipped++; continue;
+      }
 
       // MTF filter
       const mtf = mtfData[symbol];
@@ -557,21 +910,35 @@ export default function App() {
         const signals = [mtf.M5, mtf.H1, mtf.H4];
         const agree = signals.filter(s=>s===analysis.signal).length;
         const required = eaConfig.mtfFilter === "3OF3" ? 3 : 2;
-        if (agree < required) { addLog("WARN", `${symbol}: ${analysis.signal} — MTF tidak konfirmasi (${agree}/3)`); continue; }
+        if (agree < required) {
+          addLog("WARN", `${symbol} → ${analysis.signal} DITOLAK — MTF hanya ${agree}/3 setuju (butuh ${required})`);
+          skipped++; continue;
+        }
+        addLog("INFO", `${symbol} → MTF konfirmasi ${agree}/3 ✓`);
       }
 
       // Max open trades
-      if (positions.length >= eaConfig.maxOpenTrades) { addLog("WARN",`Max open trades tercapai (${eaConfig.maxOpenTrades})`); break; }
+      if (positions.length >= eaConfig.maxOpenTrades) {
+        addLog("WARN", `BERHENTI — Max posisi terbuka tercapai (${positions.length}/${eaConfig.maxOpenTrades})`);
+        break;
+      }
 
       // Max daily loss
       const currentLoss = account?.profit || 0;
-      if (currentLoss < -eaConfig.maxDailyLoss) { addLog("ERROR","Max daily loss tercapai — EA dihentikan"); setEaRunning(false); return; }
+      if (currentLoss < -eaConfig.maxDailyLoss) {
+        addLog("ERROR", `MAX DAILY LOSS TERCAPAI ($${currentLoss.toFixed(2)}) — EA dihentikan otomatis!`);
+        setEaRunning(false); return;
+      }
 
       // Execute order
       const lot = Math.min(eaConfig.defaultLot, eaConfig.maxLot);
-      addLog("TRADE", `${symbol} ${analysis.signal} ${lot} lot | SL:${analysis.sl_pips}p TP:${analysis.tp_pips}p | Conf:${analysis.confidence}`);
+      addLog("TRADE", `ORDER KIRIM → ${symbol} ${analysis.signal} ${lot} lot @ ${analysis.entry_price} | SL:${analysis.sl_pips}p | TP:${analysis.tp_pips}p | R:R 1:${analysis.rr_ratio} | Conf:${analysis.confidence}`);
       handleOrder(symbol, analysis.signal, String(lot), String(analysis.sl_pips), String(analysis.tp_pips));
+      executed++;
     }
+
+    const elapsed = ((Date.now()-scanStart)/1000).toFixed(1);
+    addLog("SYSTEM", `━━━ SCAN SELESAI ${elapsed}s — Eksekusi:${executed} | Skip:${skipped} | Wait:${waited} | Posisi:${positions.length}/${eaConfig.maxOpenTrades} | P&L:${account?.profit>=0?"+":""}${account?.profit?.toFixed(2)||"0"} ━━━`);
   }, [eaRunning, activeEAPairs, handleAnalyze, eaConfig, mtfData, positions.length, account]);
 
   useEffect(() => {
@@ -587,7 +954,24 @@ export default function App() {
 
   const handleOrder = (symbol, action, volume, sl, tp) => {
     if (!demoMode && wsRef.current?.readyState === 1) {
-      wsRef.current.send(JSON.stringify({type:"send_order",symbol,action,volume:parseFloat(volume),sl:parseFloat(sl)||0,tp:parseFloat(tp)||0,comment:`EA_${action}`}));
+      const orderPayload = {
+        type: "send_order",
+        symbol,
+        action,
+        volume: parseFloat(volume),
+        sl: parseFloat(sl)||0,
+        tp: parseFloat(tp)||0,
+        comment: `DnR_EA_${symbol}`   // fix: tidak pakai action agar tidak jadi EA_SELL_SELL
+      };
+      addLog("AI", `📡 Kirim ke MT5: ${symbol} ${action} ${volume}lot SL:${sl} TP:${tp}`);
+      wsRef.current.send(JSON.stringify(orderPayload));
+      // Request sync posisi 2 detik setelah kirim order (antisipasi bridge yang tidak kirim order_result)
+      setTimeout(() => {
+        if (wsRef.current?.readyState === 1) {
+          wsRef.current.send(JSON.stringify({type:"get_positions"}));
+          wsRef.current.send(JSON.stringify({type:"get_account"}));
+        }
+      }, 2000);
     } else {
       const ticket = Math.floor(Math.random()*90000+10000);
       const tick = ticks[symbol];
@@ -676,24 +1060,51 @@ export default function App() {
             </div>
             {/* Active Pairs */}
             <div style={{marginTop:8}}>
-              <div style={{color:"#334155",fontSize:9,letterSpacing:1,marginBottom:4}}>AKTIF PAIR</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-                {PAIRS.map(p=>(
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                <span style={{color:"#334155",fontSize:9,letterSpacing:1}}>AKTIF PAIR ({activeEAPairs.length})</span>
+                <div style={{display:"flex",gap:4}}>
+                  <button onClick={()=>setActiveEAPairs(PAIR_CATEGORIES[pairCategory]||[])} style={{background:"#052e16",border:"1px solid #16a34a",color:"#4ade80",padding:"1px 6px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace"}}>+Tab</button>
+                  <button onClick={()=>setActiveEAPairs([])} style={{background:"#2d0b0b",border:"1px solid #dc2626",color:"#f87171",padding:"1px 6px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace"}}>Clear</button>
+                </div>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:3,maxHeight:80,overflowY:"auto"}}>
+                {(PAIR_CATEGORIES[pairCategory]||PAIRS).map(p=>(
                   <button key={p} onClick={()=>setActiveEAPairs(prev=>prev.includes(p)?prev.filter(x=>x!==p):[...prev,p])}
-                    style={{background:activeEAPairs.includes(p)?"#0c1a2e":"#0a0f1e",border:`1px solid ${activeEAPairs.includes(p)?"#1d4ed8":"#1e293b"}`,color:activeEAPairs.includes(p)?"#93c5fd":"#334155",padding:"2px 8px",borderRadius:3,cursor:"pointer",fontSize:10,fontFamily:"monospace"}}>
+                    style={{background:activeEAPairs.includes(p)?"#0c1a2e":"#0a0f1e",border:`1px solid ${activeEAPairs.includes(p)?"#1d4ed8":"#1e293b"}`,color:activeEAPairs.includes(p)?"#93c5fd":"#334155",padding:"2px 6px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace"}}>
                     {p}
                   </button>
                 ))}
               </div>
+              {activeEAPairs.length>0 && <div style={{color:"#1e3a5f",fontSize:9,marginTop:3,fontFamily:"monospace"}}>Aktif: {activeEAPairs.join(", ")}</div>}
             </div>
           </div>
 
           {/* PAIR LIST */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
             <span style={{color:"#334155",fontSize:9,letterSpacing:2}}>MARKET WATCH</span>
             <button onClick={analyzeAll} style={{background:"#0f172a",border:"1px solid #1e293b",color:"#06b6d4",padding:"2px 8px",borderRadius:4,cursor:"pointer",fontSize:10}}>⚡ ALL</button>
           </div>
-          {PAIRS.map(p=>(
+          {/* Category Tabs */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:4}}>
+            {Object.keys(PAIR_CATEGORIES).map(cat=>(
+              <button key={cat} onClick={()=>setPairCategory(cat)} style={{
+                background:pairCategory===cat?"#0c1a2e":"#0a0f1e",
+                border:`1px solid ${pairCategory===cat?"#1d4ed8":"#1e293b"}`,
+                color:pairCategory===cat?"#93c5fd":"#334155",
+                padding:"2px 7px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace"
+              }}>{cat} <span style={{color:"#1e3a5f"}}>{PAIR_CATEGORIES[cat].length}</span></button>
+            ))}
+          </div>
+          {/* Search */}
+          <input
+            value={pairSearch} onChange={e=>setPairSearch(e.target.value.toUpperCase())}
+            placeholder="Cari pair..."
+            style={{width:"100%",background:"#0a0f1e",border:"1px solid #1e293b",borderRadius:4,padding:"5px 8px",color:"#94a3b8",fontFamily:"monospace",fontSize:11,boxSizing:"border-box",marginBottom:4}}
+          />
+          {(pairSearch
+            ? PAIRS.filter(p=>p.includes(pairSearch))
+            : PAIR_CATEGORIES[pairCategory]||[]
+          ).map(p=>(
             <PairCard key={p} symbol={p} tick={ticks[p]} candles={candles[p]} analysis={analyses[p]} mtfData={mtfData[p]} analyzing={analyzing[p]} selected={selected===p} onSelect={setSelected} onAnalyze={handleAnalyze}/>
           ))}
         </div>
@@ -820,13 +1231,7 @@ export default function App() {
 
           {/* LOG TAB */}
           {tab==="log" && (
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{color:"#475569",fontSize:9,letterSpacing:2}}>EA ACTIVITY LOG ({eaLogs.length})</span>
-                <button onClick={()=>setEaLogs([])} style={{background:"#0f172a",border:"1px solid #1e293b",color:"#475569",padding:"2px 10px",borderRadius:4,cursor:"pointer",fontSize:10,fontFamily:"monospace"}}>🗑 Clear</button>
-              </div>
-              <EALog logs={eaLogs}/>
-            </div>
+            <EALogTab logs={eaLogs} setLogs={setEaLogs} eaRunning={eaRunning} eaConfig={eaConfig} positions={positions} eaStats={eaStats} account={account}/>
           )}
         </div>
       </div>
