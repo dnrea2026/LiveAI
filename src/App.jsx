@@ -111,6 +111,94 @@ const DIGITS = {
   BTCUSD:2, ETHUSD:2, LTCUSD:2, XRPUSD:5, BNBUSD:2, SOLUSD:2, DOGEUSD:5, ADAUSD:5, DOTUSD:3, AVAXUSD:2, LINKUSD:3,
 };
 
+// Smart SL/TP defaults per instrument (in pips, Exness convention)
+const PAIR_SLTP = {
+  // Forex Majors  (1 pip = 0.0001)
+  EURUSD:{sl:80,tp:200},  GBPUSD:{sl:100,tp:250}, USDJPY:{sl:80,tp:200},
+  AUDUSD:{sl:80,tp:200},  USDCHF:{sl:80,tp:200},  USDCAD:{sl:80,tp:200}, NZDUSD:{sl:80,tp:200},
+  // Forex Minors
+  EURGBP:{sl:80,tp:200},  EURJPY:{sl:100,tp:250}, EURCHF:{sl:80,tp:200},
+  EURAUD:{sl:100,tp:250}, EURCAD:{sl:100,tp:250}, EURNZD:{sl:100,tp:250},
+  GBPJPY:{sl:150,tp:400}, GBPCHF:{sl:120,tp:300}, GBPAUD:{sl:150,tp:380},
+  GBPCAD:{sl:130,tp:330}, GBPNZD:{sl:150,tp:380},
+  AUDJPY:{sl:100,tp:250}, AUDCHF:{sl:80,tp:200},  AUDCAD:{sl:80,tp:200},  AUDNZD:{sl:80,tp:200},
+  CADJPY:{sl:100,tp:250}, CADCHF:{sl:80,tp:200},  CHFJPY:{sl:100,tp:250},
+  NZDJPY:{sl:100,tp:250}, NZDCHF:{sl:80,tp:200},  NZDCAD:{sl:80,tp:200},
+  // Exotics
+  USDZAR:{sl:300,tp:750}, USDMXN:{sl:300,tp:750}, USDNOK:{sl:200,tp:500},
+  USDSEK:{sl:200,tp:500}, USDSGD:{sl:150,tp:380}, USDCNH:{sl:200,tp:500},
+  USDTRY:{sl:400,tp:1000},USDHUF:{sl:300,tp:750}, USDPLN:{sl:200,tp:500},
+  EURNOK:{sl:200,tp:500}, EURSEK:{sl:200,tp:500}, EURTRY:{sl:400,tp:1000},
+  EURHUF:{sl:300,tp:750}, EURPLN:{sl:200,tp:500},
+  GBPTRY:{sl:500,tp:1200},GBPNOK:{sl:200,tp:500}, GBPSEK:{sl:200,tp:500},
+  // Metals  (XAUUSD: 1 pip=$0.01, SL 500 pip = $50/0.01lot)
+  XAUUSD:{sl:800,tp:2000}, XAGUSD:{sl:300,tp:750},
+  XPTUSD:{sl:500,tp:1250}, XPDUSD:{sl:600,tp:1500},
+  XAUEUR:{sl:800,tp:2000}, XAUGBP:{sl:800,tp:2000},
+  // Energy
+  USOIL:{sl:150,tp:380},  UKOIL:{sl:150,tp:380},  NATGAS:{sl:100,tp:250},
+  // Indices  (point-based)
+  US500:{sl:50,tp:125},   US30:{sl:300,tp:750},   US100:{sl:150,tp:375},
+  UK100:{sl:150,tp:375},  GER40:{sl:200,tp:500},  FRA40:{sl:150,tp:375},
+  JPN225:{sl:300,tp:750}, AUS200:{sl:100,tp:250},  HK50:{sl:200,tp:500},  STOXX50:{sl:100,tp:250},
+  // Crypto
+  BTCUSD:{sl:1500,tp:4000}, ETHUSD:{sl:200,tp:500},
+  LTCUSD:{sl:100,tp:250},   XRPUSD:{sl:150,tp:380},
+  BNBUSD:{sl:200,tp:500},   SOLUSD:{sl:200,tp:500},
+  DOGEUSD:{sl:150,tp:380},  ADAUSD:{sl:150,tp:380},
+  DOTUSD:{sl:150,tp:380},   AVAXUSD:{sl:200,tp:500}, LINKUSD:{sl:150,tp:380},
+};
+function getDefaultSLTP(symbol) {
+  return PAIR_SLTP[symbol] || { sl:200, tp:500 };
+}
+
+// Get instrument category
+function getPairCategory(symbol) {
+  for (const [cat, pairs] of Object.entries(PAIR_CATEGORIES)) {
+    if (pairs.includes(symbol)) return cat;
+  }
+  return "Forex";
+}
+
+// Pip size in price units per instrument (Exness convention)
+function getPipSize(symbol) {
+  const digits = DIGITS[symbol] || 5;
+  // Crypto overrides
+  if (symbol === "BTCUSD")   return 1.0;    // 1 pip = $1.00
+  if (symbol === "ETHUSD")   return 0.5;    // 1 pip = $0.50
+  if (["BNBUSD","SOLUSD","AVAXUSD","LTCUSD"].includes(symbol)) return 0.1;
+  if (["DOTUSD","LINKUSD"].includes(symbol)) return 0.01;
+  // Indices
+  if (["US30","JPN225","GER40"].includes(symbol))    return 1.0;
+  if (["US500","US100","UK100","FRA40","AUS200","HK50","STOXX50"].includes(symbol)) return 0.1;
+  // Energy
+  if (["USOIL","UKOIL"].includes(symbol)) return 0.01;
+  if (symbol === "NATGAS")   return 0.001;
+  // Default: 10^-(digits-1)
+  return Math.pow(10, -(digits - 1));
+}
+
+// Convert pips to price distance
+function pipsToPrice(symbol, pips) {
+  return +(pips * getPipSize(symbol)).toFixed(DIGITS[symbol] || 5);
+}
+
+// Convert price distance to pips
+function priceToPips(symbol, priceDiff) {
+  return Math.round(Math.abs(priceDiff) / getPipSize(symbol));
+}
+
+// Calculate SL/TP price levels from entry + pips
+function calcSLTP(symbol, action, entryPrice, slPips, tpPips) {
+  const slDist = pipsToPrice(symbol, slPips);
+  const tpDist = pipsToPrice(symbol, tpPips);
+  const sl = action === "BUY" ? +(entryPrice - slDist).toFixed(DIGITS[symbol]||5)
+                               : +(entryPrice + slDist).toFixed(DIGITS[symbol]||5);
+  const tp = action === "BUY" ? +(entryPrice + tpDist).toFixed(DIGITS[symbol]||5)
+                               : +(entryPrice - tpDist).toFixed(DIGITS[symbol]||5);
+  return { sl, tp, slDist, tpDist };
+}
+
 // Helper: volatility per pair type
 function getPairVolatility(symbol) {
   if (["BTCUSD"].includes(symbol)) return 80;
@@ -188,54 +276,206 @@ const GROQ_API_KEY = "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";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 
 async function analyzeWithGroq(symbol, candles, tick, eaConfig) {
-  const recent = candles.slice(-20);
-  const closes = recent.map(c => c.close);
-  const last = closes[closes.length-1];
-  const first = closes[0];
-  const trend = last > first ? "naik" : "turun";
-  const change = (((last - first)/first)*100).toFixed(3);
-  const high20 = Math.max(...recent.map(c=>c.high));
-  const low20 = Math.min(...recent.map(c=>c.low));
+  const recent  = candles.slice(-20);
+  const closes  = recent.map(c => c.close);
+  const highs   = recent.map(c => c.high);
+  const lows    = recent.map(c => c.low);
+  const last    = closes[closes.length-1];
+  const first   = closes[0];
+  const trend   = last > first ? "bullish" : "bearish";
+  const changePct = (((last - first)/first)*100).toFixed(3);
+  const atrRaw  = +(Math.max(...highs) - Math.min(...lows)).toFixed(DIGITS[symbol]||5);
 
-  // Simple technical indicators
-  const sma5 = closes.slice(-5).reduce((a,b)=>a+b,0)/5;
+  // SMA
+  const sma5  = closes.slice(-5).reduce((a,b)=>a+b,0)/5;
   const sma10 = closes.slice(-10).reduce((a,b)=>a+b,0)/10;
   const sma20 = closes.reduce((a,b)=>a+b,0)/closes.length;
 
-  const prompt = `Kamu adalah sistem EA (Expert Advisor) trading profesional. Berikan analisis teknikal dan sinyal trading otomatis.
+  // RSI-14
+  const gains = [], losses = [];
+  for (let i=1; i<closes.length; i++) {
+    const d = closes[i]-closes[i-1];
+    gains.push(d>0?d:0); losses.push(d<0?-d:0);
+  }
+  const avgGain = gains.slice(-14).reduce((a,b)=>a+b,0)/14;
+  const avgLoss = losses.slice(-14).reduce((a,b)=>a+b,0)/14;
+  const rsi = avgLoss===0 ? 100 : +(100-(100/(1+avgGain/avgLoss))).toFixed(1);
 
-Pair: ${symbol}
-Bid: ${tick.bid} | Ask: ${tick.ask} | Spread: ${tick.spread} pips
-Trend 20 candle M15: ${trend} ${change}%
-High 20: ${high20} | Low 20: ${low20}
-SMA5: ${sma5.toFixed(DIGITS[symbol])} | SMA10: ${sma10.toFixed(DIGITS[symbol])} | SMA20: ${sma20.toFixed(DIGITS[symbol])}
-Close 5 terakhir: ${closes.slice(-5).join(", ")}
+  // Bollinger Band (20, 2σ)
+  const mean = sma20;
+  const variance = closes.reduce((a,c)=>a+(c-mean)**2,0)/closes.length;
+  const stdDev   = Math.sqrt(variance);
+  const bbUpper  = +(mean + 2*stdDev).toFixed(DIGITS[symbol]||5);
+  const bbLower  = +(mean - 2*stdDev).toFixed(DIGITS[symbol]||5);
 
-EA Config: SL=${eaConfig.defaultSL}pips, TP=${eaConfig.defaultTP}pips, MaxLot=${eaConfig.maxLot}, MinConfidence=${eaConfig.minConfidence}
+  // Swing structure — unique levels sorted, deduped by 0.1% tolerance
+  const pipSz   = getPipSize(symbol);
+  const digits  = DIGITS[symbol] || 5;
+  const category = getPairCategory(symbol);
+  const spread  = tick.spread || 0;
+  const minSLpips = Math.max(Math.ceil(spread * 2.5 + 3), 5);
 
-Berikan analisis untuk EA auto trading:
-1. Signal (BUY/SELL/WAIT) berdasarkan SMA crossover, momentum, dan trend
-2. Entry price yang optimal
-3. SL dan TP dalam pips
-4. Confidence level
-5. Alasan signal
+  // Unique swing highs above current price (nearest first)
+  const allHighs = [...new Set(highs.map(h=>+h.toFixed(digits)))].sort((a,b)=>a-b);
+  const allLows  = [...new Set(lows.map(l=>+l.toFixed(digits)))].sort((a,b)=>a-b);
+  const resAbove = allHighs.filter(h=>h>last).slice(0,5);   // nearest resistances
+  const supBelow = allLows.filter(l=>l<last).reverse().slice(0,5); // nearest supports
+  // Fallback if price is at extremes
+  const resLevels = resAbove.length >= 2 ? resAbove : allHighs.slice(-5);
+  const supLevels = supBelow.length >= 2 ? supBelow : allLows.slice(0,5);
 
-Kembalikan HANYA JSON valid ini:
+  const prompt = `You are a professional multi-instrument trading EA for Exness. Your job is to analyze raw market data and generate a signal with structured exits. All SL/TP values MUST be derived from the actual price levels provided — no hardcoded numbers, no guessing.
+
+INSTRUMENT: ${symbol} (${category})
+Pip size: ${pipSz} — meaning 1 pip = ${pipSz} in price units
+Entry zone: Bid=${tick.bid} | Ask=${tick.ask} | Spread=${spread} pips
+
+PRICE CONTEXT (20 candles M15):
+  Current:   ${last}
+  ATR range: ${atrRaw}
+  BB Upper:  ${bbUpper} | BB Lower: ${bbLower}
+  SMA5: ${sma5.toFixed(digits)} | SMA10: ${sma10.toFixed(digits)} | SMA20: ${sma20.toFixed(digits)}
+  RSI(14): ${rsi}${rsi>70?" — OVERBOUGHT":rsi<30?" — OVERSOLD":""}
+  Trend: ${trend} ${changePct}%
+
+KEY PRICE LEVELS (from actual candle data, sorted nearest first):
+  Resistance above price: ${resLevels.join(" | ")||"none detected"}
+  Support below price:    ${supLevels.join(" | ")||"none detected"}
+
+DECISION LOGIC:
+  BUY  if: price above SMA10 & SMA20, RSI not overbought, bullish momentum from supports
+  SELL if: price below SMA10 & SMA20, RSI not oversold, bearish momentum from resistances
+  WAIT if: mixed signals or price in congestion zone
+
+EXIT PLACEMENT RULES (derive all prices from the levels above):
+  SL  → BUY: just below nearest support | SELL: just above nearest resistance
+        Minimum sl_pips = ${minSLpips} (2.5× spread buffer)
+
+  TP1 → BUY: first resistance above | SELL: first support below
+        R:R vs SL must be >= 1.5. This is where 50% position closes.
+
+  TP2 → BUY: second stronger resistance | SELL: second deeper support
+        R:R vs SL must be >= 3.0. Remaining 50% runs here.
+
+  SL+ → After TP1 hit, move SL to this price to lock in partial profit:
+        BUY: entry + round(sl_pips × 0.3) × ${pipSz}
+        SELL: entry - round(sl_pips × 0.3) × ${pipSz}
+
+PIP CONVERSION (mandatory — use this formula for every pips field):
+  pips = round( abs(price_level - entry_price) / ${pipSz} )
+
+VALIDATION before returning:
+  - BUY:  sl_price < entry < tp1_price < tp2_price
+  - SELL: sl_price > entry > tp1_price > tp2_price
+  - sl_plus_price must be between entry and tp1_price
+  - All pips fields must match their price counterparts
+
+Return ONLY valid JSON — no commentary:
 {
   "signal": "BUY|SELL|WAIT",
   "confidence": "HIGH|MEDIUM|LOW",
   "entry_price": ${tick.bid},
-  "sl_pips": ${eaConfig.defaultSL},
-  "tp_pips": ${eaConfig.defaultTP},
-  "trend": "...",
-  "sma_cross": "bullish|bearish|neutral",
-  "momentum": "strong|moderate|weak",
-  "signal_reason": "...",
-  "summary": "...",
-  "support": ${low20},
-  "resistance": ${high20},
-  "rr_ratio": 2.5
+  "sl_price": 0, "sl_pips": 0,
+  "tp1_price": 0, "tp1_pips": 0, "tp1_lot_pct": 50,
+  "tp2_price": 0, "tp2_pips": 0, "tp2_lot_pct": 50,
+  "sl_plus_price": 0, "sl_plus_pips": 0,
+  "rr1": 0, "rr2": 0,
+  "trend": "", "sma_cross": "bullish|bearish|neutral",
+  "momentum": "strong|moderate|weak", "rsi": ${rsi},
+  "signal_reason": "", "summary": "",
+  "support": ${supLevels[0]||0}, "resistance": ${resLevels[0]||0}
 }`;
+
+  // ─── Helpers ───────────────────────────────────────────────────────────
+  // Bidirectional resolve: given price XOR pips, compute the other
+  const resolveLevel = (price, pips, entry, action, isSL, pipSz, digs) => {
+    let p = +price, k = +pips;
+    if (p > 0 && (!k || k <= 0)) k = Math.round(Math.abs(entry - p) / pipSz);
+    if (k > 0 && (!p || p <= 0))
+      p = isSL
+        ? (action==="BUY" ? +(entry - k*pipSz).toFixed(digs) : +(entry + k*pipSz).toFixed(digs))
+        : (action==="BUY" ? +(entry + k*pipSz).toFixed(digs) : +(entry - k*pipSz).toFixed(digs));
+    return { price: p||0, pips: Math.round(k)||0 };
+  };
+
+  // Structural validation: ensure SL/TP ordering is correct per direction
+  const validateSide = (val, entry, action, isSL) => {
+    if (!val || val <= 0) return false;
+    return isSL
+      ? (action==="BUY" ? val < entry : val > entry)
+      : (action==="BUY" ? val > entry : val < entry);
+  };
+
+  // Post-process: validate AI output, fill gaps, guarantee correctness for ALL pairs
+  const postProcessAnalysis = (analysis, symbol, tick) => {
+    if (!analysis || !analysis.signal) return analysis;
+    const action = analysis.signal === "WAIT" ? "BUY" : analysis.signal;
+    const entry  = +(analysis.entry_price || tick.bid);
+    const pipSz  = getPipSize(symbol);
+    const digs   = DIGITS[symbol] || 5;
+
+    // ── Resolve each level ──────────────────────────────────────────────
+    let sl     = resolveLevel(analysis.sl_price,       analysis.sl_pips,       entry, action, true,  pipSz, digs);
+    let tp1    = resolveLevel(analysis.tp1_price,      analysis.tp1_pips,      entry, action, false, pipSz, digs);
+    let tp2    = resolveLevel(analysis.tp2_price,      analysis.tp2_pips,      entry, action, false, pipSz, digs);
+    let slPlus = resolveLevel(analysis.sl_plus_price,  analysis.sl_plus_pips,  entry, action, false, pipSz, digs);
+
+    // ── Validate structural correctness ─────────────────────────────────
+    // SL must be on wrong side of entry
+    if (!validateSide(sl.price, entry, action, true)) sl = { price:0, pips:0 };
+
+    // TP1 must be past entry (correct side)
+    if (!validateSide(tp1.price, entry, action, false)) tp1 = { price:0, pips:0 };
+
+    // TP2 must be further than TP1
+    const tp2Valid = validateSide(tp2.price, entry, action, false) &&
+      (action==="BUY" ? tp2.price > tp1.price : tp2.price < tp1.price);
+    if (!tp2Valid) tp2 = { price:0, pips:0 };
+
+    // SL+ must be between entry and TP1
+    const slPlusValid = slPlus.price > 0 &&
+      (action==="BUY"
+        ? slPlus.price > entry && slPlus.price < (tp1.price||Infinity)
+        : slPlus.price < entry && slPlus.price > (tp1.price||0));
+    if (!slPlusValid) slPlus = { price:0, pips:0 };
+
+    // ── Auto-fill missing levels from what we do have ───────────────────
+    // SL fallback: use ATR-based estimate (0.5× ATR from entry)
+    if (!sl.pips) {
+      const atrPips = Math.round(atrRaw / pipSz);
+      const slPips  = Math.max(Math.round(atrPips * 0.5), minSLpips);
+      sl = resolveLevel(0, slPips, entry, action, true, pipSz, digs);
+    }
+
+    // TP1 fallback: 1.5× SL distance
+    if (!tp1.pips && sl.pips)
+      tp1 = resolveLevel(0, Math.round(sl.pips * 1.5), entry, action, false, pipSz, digs);
+
+    // TP2 fallback: 3× SL distance
+    if (!tp2.pips && sl.pips)
+      tp2 = resolveLevel(0, Math.round(sl.pips * 3), entry, action, false, pipSz, digs);
+
+    // SL+ fallback: entry + 30% of SL distance (lock partial profit)
+    if (!slPlus.pips && sl.pips)
+      slPlus = resolveLevel(0, Math.round(sl.pips * 0.3), entry, action, false, pipSz, digs);
+
+    // ── Source tagging ──────────────────────────────────────────────────
+    const source = (analysis.sl_price > 0 && validateSide(analysis.sl_price, entry, action, true))
+      ? "AI" : "computed";
+
+    return {
+      ...analysis,
+      _sltp_source: source,
+      pip_size: pipSz,
+      sl_price:       sl.price,     sl_pips:       sl.pips,
+      tp1_price:      tp1.price,    tp1_pips:      tp1.pips,    tp1_lot_pct: 50,
+      tp2_price:      tp2.price,    tp2_pips:      tp2.pips,    tp2_lot_pct: 50,
+      sl_plus_price:  slPlus.price, sl_plus_pips:  slPlus.pips,
+      rr1: tp1.pips && sl.pips ? +(tp1.pips/sl.pips).toFixed(2) : 0,
+      rr2: tp2.pips && sl.pips ? +(tp2.pips/sl.pips).toFixed(2) : 0,
+      tp_pips: tp2.pips, tp_price: tp2.price, // backward compat
+    };
+  };
 
   try {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -246,11 +486,11 @@ Kembalikan HANYA JSON valid ini:
       },
       body: JSON.stringify({
         model: GROQ_MODEL,
-        max_tokens: 1000,
+        max_tokens: 1500,
         temperature: 0.1,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: "Kamu adalah EA trading professional. Jawab HANYA dengan JSON valid, tanpa markdown, tanpa teks tambahan." },
+          { role: "system", content: "You are a professional trading EA analyst. Respond ONLY with valid JSON. No markdown, no commentary, no extra text. Every numeric field must contain a real number derived from market data." },
           { role: "user", content: prompt }
         ]
       })
@@ -267,10 +507,15 @@ Kembalikan HANYA JSON valid ini:
     const text = data.choices?.[0]?.message?.content || "{}";
     console.log("[Groq Raw]", text);
     const clean = text.replace(/```json|```/g,"").trim();
-    return JSON.parse(clean);
+    const parsed = JSON.parse(clean);
+    return postProcessAnalysis(parsed, symbol, tick);
   } catch(e) {
     console.error("[Groq Fetch Error]", e);
-    return { signal:"WAIT", summary:`Error: ${e.message}`, confidence:"LOW", trend:"—", sl_pips:eaConfig.defaultSL, tp_pips:eaConfig.defaultTP, rr_ratio:0 };
+    const fallback = getDefaultSLTP(symbol);
+    const { sl, tp } = calcSLTP(symbol, "BUY", tick.bid||0, fallback.sl, fallback.tp);
+    return { signal:"WAIT", summary:`Error: ${e.message}`, confidence:"LOW", trend:"—",
+             sl_pips:fallback.sl, tp_pips:fallback.tp, sl_price:sl, tp_price:tp,
+             pip_size:getPipSize(symbol), rr_ratio:+(fallback.tp/fallback.sl).toFixed(2) };
   }
 }
 
@@ -362,54 +607,110 @@ function MTFBadge({ signal }) {
 }
 
 // EA CONFIG PANEL
-function EAConfigPanel({ config, onChange }) {
-  const field = (key, label, min, max, step=1) => (
-    <div style={{flex:1}}>
+function EAConfigPanel({ config, onChange, analyses }) {
+  const field = (key, label, min, max, step=1, disabled=false) => (
+    <div style={{flex:1,opacity:disabled?0.4:1}}>
       <div style={{color:"#475569",fontSize:10,fontFamily:"monospace",marginBottom:3}}>{label}</div>
       <input
-        type="number" value={config[key]} min={min} max={max} step={step}
+        type="number" value={config[key]} min={min} max={max} step={step} disabled={disabled}
         onChange={e=>onChange({...config,[key]:parseFloat(e.target.value)||0})}
-        style={{width:"100%",background:"#0a0f1e",border:"1px solid #1e293b",borderRadius:4,padding:"6px 8px",color:"#e2e8f0",fontFamily:"monospace",fontSize:12,boxSizing:"border-box"}}
+        style={{width:"100%",background:"#0a0f1e",border:`1px solid ${disabled?"#0f172a":"#1e293b"}`,borderRadius:4,padding:"6px 8px",color:"#e2e8f0",fontFamily:"monospace",fontSize:12,boxSizing:"border-box"}}
       />
     </div>
   );
+
+  const aiOn = config.useAiSLTP !== false;
+
   return (
-    <div style={{background:"#070e1d",border:"1px solid #1e3a5f",borderRadius:10,padding:16}}>
-      <div style={{color:"#06b6d4",fontSize:11,fontFamily:"monospace",letterSpacing:2,marginBottom:12}}>⚙ EA CONFIGURATION</div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
-        {field("defaultSL","Default SL (pips)",10,500)}
-        {field("defaultTP","Default TP (pips)",10,1000)}
-        {field("maxLot","Max Lot Size",0.01,10,0.01)}
-        {field("defaultLot","Default Lot",0.01,10,0.01)}
-        {field("maxDailyLoss","Max Daily Loss ($)",10,10000)}
-        {field("maxOpenTrades","Max Open Trades",1,20)}
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{background:"#070e1d",border:"1px solid #1e3a5f",borderRadius:10,padding:16}}>
+        <div style={{color:"#06b6d4",fontSize:11,fontFamily:"monospace",letterSpacing:2,marginBottom:12}}>⚙ EA CONFIGURATION</div>
+
+        {/* AI SL/TP Toggle */}
+        <div style={{background:"#0a0f1e",border:`1px solid ${aiOn?"#1d4ed8":"#1e293b"}`,borderRadius:8,padding:"10px 14px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{color:aiOn?"#93c5fd":"#475569",fontSize:11,fontFamily:"monospace",fontWeight:700}}>🤖 AI AUTO SL/TP</div>
+            <div style={{color:"#334155",fontSize:10,marginTop:2}}>{aiOn?"SL & TP dihitung otomatis oleh AI per instrumen":"Gunakan SL/TP manual dari config di bawah"}</div>
+          </div>
+          <button onClick={()=>onChange({...config,useAiSLTP:!aiOn})} style={{
+            background:aiOn?"#1e3a5f":"#0f172a", border:`1px solid ${aiOn?"#1d4ed8":"#334155"}`,
+            color:aiOn?"#93c5fd":"#475569", padding:"5px 16px", borderRadius:20, cursor:"pointer",
+            fontFamily:"monospace", fontSize:11, fontWeight:700, letterSpacing:1
+          }}>{aiOn?"ON ●":"● OFF"}</button>
+        </div>
+
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          {field("defaultSL","Fallback SL (pips)",10,5000,1,aiOn)}
+          {field("defaultTP","Fallback TP (pips)",10,10000,1,aiOn)}
+          {field("maxLot","Max Lot Size",0.01,10,0.01)}
+          {field("defaultLot","Default Lot",0.01,10,0.01)}
+          {field("maxDailyLoss","Max Daily Loss ($)",10,10000)}
+          {field("maxOpenTrades","Max Open Trades",1,20)}
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <div style={{flex:1}}>
+            <div style={{color:"#475569",fontSize:10,fontFamily:"monospace",marginBottom:3}}>MIN CONFIDENCE</div>
+            <select value={config.minConfidence} onChange={e=>onChange({...config,minConfidence:e.target.value})}
+              style={{width:"100%",background:"#0a0f1e",border:"1px solid #1e293b",borderRadius:4,padding:"6px 8px",color:"#e2e8f0",fontFamily:"monospace",fontSize:12}}>
+              <option>LOW</option><option>MEDIUM</option><option>HIGH</option>
+            </select>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{color:"#475569",fontSize:10,fontFamily:"monospace",marginBottom:3}}>MTF FILTER</div>
+            <select value={config.mtfFilter} onChange={e=>onChange({...config,mtfFilter:e.target.value})}
+              style={{width:"100%",background:"#0a0f1e",border:"1px solid #1e293b",borderRadius:4,padding:"6px 8px",color:"#e2e8f0",fontFamily:"monospace",fontSize:12}}>
+              <option value="OFF">OFF</option>
+              <option value="2OF3">2 of 3 agree</option>
+              <option value="3OF3">All 3 agree</option>
+            </select>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{color:"#475569",fontSize:10,fontFamily:"monospace",marginBottom:3}}>AUTO INTERVAL</div>
+            <select value={config.autoInterval} onChange={e=>onChange({...config,autoInterval:parseInt(e.target.value)})}
+              style={{width:"100%",background:"#0a0f1e",border:"1px solid #1e293b",borderRadius:4,padding:"6px 8px",color:"#e2e8f0",fontFamily:"monospace",fontSize:12}}>
+              <option value={15000}>15 detik</option>
+              <option value={30000}>30 detik</option>
+              <option value={60000}>1 menit</option>
+              <option value={300000}>5 menit</option>
+            </select>
+          </div>
+        </div>
       </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <div style={{flex:1}}>
-          <div style={{color:"#475569",fontSize:10,fontFamily:"monospace",marginBottom:3}}>MIN CONFIDENCE</div>
-          <select value={config.minConfidence} onChange={e=>onChange({...config,minConfidence:e.target.value})}
-            style={{width:"100%",background:"#0a0f1e",border:"1px solid #1e293b",borderRadius:4,padding:"6px 8px",color:"#e2e8f0",fontFamily:"monospace",fontSize:12}}>
-            <option>LOW</option><option>MEDIUM</option><option>HIGH</option>
-          </select>
-        </div>
-        <div style={{flex:1}}>
-          <div style={{color:"#475569",fontSize:10,fontFamily:"monospace",marginBottom:3}}>MTF FILTER</div>
-          <select value={config.mtfFilter} onChange={e=>onChange({...config,mtfFilter:e.target.value})}
-            style={{width:"100%",background:"#0a0f1e",border:"1px solid #1e293b",borderRadius:4,padding:"6px 8px",color:"#e2e8f0",fontFamily:"monospace",fontSize:12}}>
-            <option value="OFF">OFF</option>
-            <option value="2OF3">2 of 3 agree</option>
-            <option value="3OF3">All 3 agree</option>
-          </select>
-        </div>
-        <div style={{flex:1}}>
-          <div style={{color:"#475569",fontSize:10,fontFamily:"monospace",marginBottom:3}}>AUTO INTERVAL</div>
-          <select value={config.autoInterval} onChange={e=>onChange({...config,autoInterval:parseInt(e.target.value)})}
-            style={{width:"100%",background:"#0a0f1e",border:"1px solid #1e293b",borderRadius:4,padding:"6px 8px",color:"#e2e8f0",fontFamily:"monospace",fontSize:12}}>
-            <option value={15000}>15 detik</option>
-            <option value={30000}>30 detik</option>
-            <option value={60000}>1 menit</option>
-            <option value={300000}>5 menit</option>
-          </select>
+
+      {/* Per-Instrument SL/TP Reference Table */}
+      <div style={{background:"#070e1d",border:"1px solid #1e293b",borderRadius:10,padding:14}}>
+        <div style={{color:"#475569",fontSize:9,letterSpacing:2,marginBottom:10}}>📊 REFERENSI SL/TP PER INSTRUMEN (Smart Default + AI Hasil)</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"monospace",fontSize:10}}>
+            <thead>
+              <tr style={{color:"#334155",borderBottom:"1px solid #0f172a"}}>
+                {["Instrumen","Kategori","Default SL","Default TP","AI SL","AI TP","R:R","Signal"].map(h=>(
+                  <th key={h} style={{padding:"4px 8px",textAlign:"left",fontWeight:600,letterSpacing:0.5,whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(PAIR_SLTP).map(([sym,def])=>{
+                const ai = analyses?.[sym];
+                const cat = getPairCategory(sym);
+                const catColor = {Majors:"#06b6d4",Minors:"#94a3b8",Exotics:"#fb923c",Metals:"#fbbf24",Energy:"#f97316",Indices:"#a78bfa",Crypto:"#4ade80"}[cat]||"#475569";
+                return (
+                  <tr key={sym} style={{borderBottom:"1px solid #0a0f1e",color:"#475569"}}>
+                    <td style={{padding:"3px 8px",color:"#94a3b8",fontWeight:700}}>{PAIR_FLAGS[sym]} {sym}</td>
+                    <td style={{padding:"3px 8px"}}><span style={{color:catColor,fontSize:9}}>{cat}</span></td>
+                    <td style={{padding:"3px 8px",color:"#f97316"}}>{def.sl}</td>
+                    <td style={{padding:"3px 8px",color:"#a78bfa"}}>{def.tp}</td>
+                    <td style={{padding:"3px 8px",color:ai?.sl_pips?"#4ade80":"#1e293b"}}>{ai?.sl_pips||"—"}</td>
+                    <td style={{padding:"3px 8px",color:ai?.tp_pips?"#4ade80":"#1e293b"}}>{ai?.tp_pips||"—"}</td>
+                    <td style={{padding:"3px 8px",color:"#a78bfa"}}>{ai?.rr_ratio?"1:"+ai.rr_ratio:"—"}</td>
+                    <td style={{padding:"3px 8px"}}>
+                      {ai?.signal ? <span style={{color:ai.signal==="BUY"?"#4ade80":ai.signal==="SELL"?"#f87171":"#475569",fontSize:9,fontWeight:700}}>{ai.signal}</span> : <span style={{color:"#1e293b"}}>—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -429,8 +730,11 @@ function OrderPanel({ symbol, tick, onOrder, analysis }) {
     }
   }, [analysis]);
 
-  const slPrice = tick?.bid && sl ? (tick.bid - parseFloat(sl) * 0.0001).toFixed(DIGITS[symbol]) : "—";
-  const tpPrice = tick?.bid && tp ? (tick.bid + parseFloat(tp) * 0.0001).toFixed(DIGITS[symbol]) : "—";
+  const pipSz = getPipSize(symbol);
+  const slPriceCalc = tick?.bid && sl ? calcSLTP(symbol, "BUY", tick.bid, parseFloat(sl), parseFloat(tp)||1).sl : null;
+  const tpPriceCalc = tick?.bid && tp ? calcSLTP(symbol, "BUY", tick.bid, parseFloat(sl)||1, parseFloat(tp)).tp : null;
+  const slPrice = slPriceCalc ?? "—";
+  const tpPrice = tpPriceCalc ?? "—";
   const rr = sl && tp ? (parseFloat(tp)/parseFloat(sl)).toFixed(1) : "—";
 
   const btnStyle = (type) => ({
@@ -462,9 +766,11 @@ function OrderPanel({ symbol, tick, onOrder, analysis }) {
         ))}
       </div>
       {sl && tp && (
-        <div style={{display:"flex",gap:16,fontSize:10,fontFamily:"monospace",marginBottom:8,padding:"4px 0"}}>
-          <span style={{color:"#64748b"}}>SL price: <span style={{color:"#f97316"}}>{slPrice}</span></span>
-          <span style={{color:"#64748b"}}>TP price: <span style={{color:"#a78bfa"}}>{tpPrice}</span></span>
+        <div style={{display:"flex",gap:16,fontSize:10,fontFamily:"monospace",marginBottom:8,padding:"6px 8px",background:"#0a0f1e",borderRadius:4}}>
+          <span style={{color:"#334155"}}>1pip=<span style={{color:"#94a3b8",fontWeight:700}}>${pipSz}</span></span>
+          <span style={{color:"#64748b"}}>SL→<span style={{color:"#f97316",fontWeight:700}}>{slPrice}</span></span>
+          <span style={{color:"#64748b"}}>TP→<span style={{color:"#a78bfa",fontWeight:700}}>{tpPrice}</span></span>
+          <span style={{color:"#64748b"}}>R:R <span style={{color:"#4ade80"}}>{rr}</span></span>
         </div>
       )}
       <div style={{display:"flex",gap:8}}>
@@ -586,7 +892,7 @@ function PositionsTable({ positions, onClose }) {
         <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"monospace",fontSize:11}}>
           <thead>
             <tr style={{color:"#475569",borderBottom:"1px solid #1e293b"}}>
-              {["Ticket","Symbol","Type","Vol","Open","Current","SL","TP","P&L",""].map(h=>(
+              {["Ticket","Symbol","Type","Vol","Open","SL","TP1","TP2","SL+","P&L",""].map(h=>(
                 <th key={h} style={{padding:"6px 8px",textAlign:"left",fontWeight:600,letterSpacing:0.5}}>{h}</th>
               ))}
             </tr>
@@ -595,13 +901,19 @@ function PositionsTable({ positions, onClose }) {
             {positions.map(p=>(
               <tr key={p.ticket} style={{borderBottom:"1px solid #0f172a",color:"#94a3b8"}}>
                 <td style={{padding:"6px 8px",color:"#475569"}}>{p.ticket}</td>
-                <td style={{padding:"6px 8px",color:"#e2e8f0",fontWeight:700}}>{p.symbol}</td>
+                <td style={{padding:"6px 8px",color:"#e2e8f0",fontWeight:700}}>
+                  {p.symbol}
+                  {p.tp_label && <span style={{color:"#334155",fontSize:8,marginLeft:4}}>({p.tp_label})</span>}
+                </td>
                 <td style={{padding:"6px 8px",color:p.type==="BUY"?"#4ade80":"#f87171",fontWeight:700}}>{p.type}</td>
                 <td style={{padding:"6px 8px"}}>{p.volume}</td>
                 <td style={{padding:"6px 8px"}}>{p.price_open}</td>
-                <td style={{padding:"6px 8px"}}>{p.price_current}</td>
                 <td style={{padding:"6px 8px",color:"#f97316"}}>{p.sl||"—"}</td>
-                <td style={{padding:"6px 8px",color:"#a78bfa"}}>{p.tp||"—"}</td>
+                <td style={{padding:"6px 8px",color:p.tp1_hit?"#475569":"#34d399",fontSize:10}}>
+                  {p.tp1>0 ? <>{p.tp1}{p.tp1_hit&&<span style={{color:"#4ade80",marginLeft:3}}>✓</span>}</> : "—"}
+                </td>
+                <td style={{padding:"6px 8px",color:"#a78bfa",fontSize:10}}>{p.tp||"—"}</td>
+                <td style={{padding:"6px 8px",color:"#06b6d4",fontSize:10}}>{p.sl_plus>0?p.sl_plus:"—"}</td>
                 <td style={{padding:"6px 8px",color:p.profit>=0?"#4ade80":"#f87171",fontWeight:700}}>{p.profit>=0?"+":""}{p.profit?.toFixed(2)}</td>
                 <td style={{padding:"6px 8px"}}>
                   <button onClick={()=>onClose(p.ticket)} style={{background:"#2d0b0b",border:"1px solid #7f1d1d",color:"#f87171",padding:"2px 8px",borderRadius:3,cursor:"pointer",fontSize:10,fontFamily:"monospace"}}>✕</button>
@@ -703,6 +1015,105 @@ function EALogTab({ logs, setLogs, eaRunning, eaConfig, positions, eaStats, acco
   );
 }
 
+// ===================== AUTH =====================
+const AUTH = { user: "SENOPATI", pass: "Hay_Dear1" };
+
+function LoginPage({ onLogin }) {
+  const [user, setUser] = useState("");
+  const [pass, setPass] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = () => {
+    if (!user || !pass) { setError("Username dan password wajib diisi."); return; }
+    setLoading(true);
+    setTimeout(() => {
+      if (user === AUTH.user && pass === AUTH.pass) {
+        saveLS("dnr_auth", { user, ts: Date.now() });
+        onLogin();
+      } else {
+        setError("Username atau password salah.");
+        setLoading(false);
+      }
+    }, 600);
+  };
+
+  return (
+    <div style={{
+      minHeight:"100vh", background:"#050c18", display:"flex", alignItems:"center", justifyContent:"center",
+      fontFamily:"monospace", position:"relative", overflow:"hidden"
+    }}>
+      {/* Background grid */}
+      <div style={{position:"absolute",inset:0,backgroundImage:"linear-gradient(#0f172a 1px,transparent 1px),linear-gradient(90deg,#0f172a 1px,transparent 1px)",backgroundSize:"40px 40px",opacity:0.4}}/>
+      {/* Glow */}
+      <div style={{position:"absolute",top:"30%",left:"50%",transform:"translate(-50%,-50%)",width:400,height:400,background:"radial-gradient(circle,#1d4ed820 0%,transparent 70%)",pointerEvents:"none"}}/>
+
+      <div style={{position:"relative",width:380,zIndex:1}}>
+        {/* Logo */}
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <div style={{fontSize:36,marginBottom:8}}>⬡</div>
+          <div style={{color:"#06b6d4",fontSize:22,fontWeight:700,letterSpacing:4}}>DnR EA TERMINAL</div>
+          <div style={{color:"#1e3a5f",fontSize:11,marginTop:4,letterSpacing:2}}>PROFESSIONAL TRADING SYSTEM</div>
+        </div>
+
+        {/* Card */}
+        <div style={{background:"#070e1d",border:"1px solid #1e293b",borderRadius:16,padding:32,boxShadow:"0 0 40px #1d4ed810"}}>
+          <div style={{color:"#475569",fontSize:10,letterSpacing:3,marginBottom:24,textAlign:"center"}}>SECURE LOGIN</div>
+
+          {/* Username */}
+          <div style={{marginBottom:16}}>
+            <div style={{color:"#334155",fontSize:10,letterSpacing:1,marginBottom:6}}>USERNAME</div>
+            <input
+              value={user} onChange={e=>{setUser(e.target.value);setError("");}}
+              onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+              placeholder="Enter username"
+              style={{width:"100%",background:"#0a0f1e",border:`1px solid ${error?"#dc2626":"#1e293b"}`,borderRadius:8,padding:"11px 14px",color:"#e2e8f0",fontFamily:"monospace",fontSize:13,boxSizing:"border-box",outline:"none"}}
+            />
+          </div>
+
+          {/* Password */}
+          <div style={{marginBottom:24}}>
+            <div style={{color:"#334155",fontSize:10,letterSpacing:1,marginBottom:6}}>PASSWORD</div>
+            <div style={{position:"relative"}}>
+              <input
+                type={showPass?"text":"password"} value={pass}
+                onChange={e=>{setPass(e.target.value);setError("");}}
+                onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+                placeholder="Enter password"
+                style={{width:"100%",background:"#0a0f1e",border:`1px solid ${error?"#dc2626":"#1e293b"}`,borderRadius:8,padding:"11px 40px 11px 14px",color:"#e2e8f0",fontFamily:"monospace",fontSize:13,boxSizing:"border-box",outline:"none"}}
+              />
+              <button onClick={()=>setShowPass(v=>!v)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:14,padding:0}}>
+                {showPass?"🙈":"👁"}
+              </button>
+            </div>
+          </div>
+
+          {/* Error */}
+          {error && <div style={{color:"#f87171",fontSize:11,marginBottom:16,textAlign:"center",padding:"6px 0",borderRadius:6,background:"#2d0b0b",border:"1px solid #7f1d1d"}}>{error}</div>}
+
+          {/* Login Button */}
+          <button onClick={handleLogin} disabled={loading} style={{
+            width:"100%",padding:"13px 0",background:loading?"#0f172a":"linear-gradient(135deg,#1d4ed8,#0891b2)",
+            border:"none",borderRadius:8,color:loading?"#334155":"#fff",fontFamily:"monospace",fontSize:13,
+            fontWeight:700,letterSpacing:2,cursor:loading?"not-allowed":"pointer",transition:"all 0.2s"
+          }}>
+            {loading?"⟳ VERIFYING...":"▶ LOGIN"}
+          </button>
+
+          <div style={{textAlign:"center",marginTop:20,color:"#1e3a5f",fontSize:9,letterSpacing:1}}>
+            UNAUTHORIZED ACCESS IS PROHIBITED
+          </div>
+        </div>
+
+        <div style={{textAlign:"center",marginTop:16,color:"#1e293b",fontSize:9,letterSpacing:1}}>
+          DnR EA Terminal v3.0 — Powered by Groq AI
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===================== PERSISTENCE HELPERS =====================
 function loadLS(key, fallback) {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
@@ -713,6 +1124,13 @@ function saveLS(key, val) {
 
 // ===================== MAIN APP =====================
 export default function App() {
+  // ── Auth gate ─────────────────────────────────────────────────────────
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    const auth = loadLS("dnr_auth", null);
+    if (!auth) return false;
+    return (Date.now() - auth.ts) < 12 * 60 * 60 * 1000;
+  });
+
   const [wsUrl, setWsUrl] = useState(() => loadLS("dnr_wsUrl", "ws://localhost:8765"));
   const [wsStatus, setWsStatus] = useState("disconnected");
   const [demoMode, setDemoMode] = useState(true);
@@ -729,7 +1147,7 @@ export default function App() {
   const [eaConfig, setEaConfig] = useState(() => loadLS("dnr_eaConfig", {
     defaultSL: 200, defaultTP: 500, maxLot: 0.5, defaultLot: 0.1,
     maxDailyLoss: 500, maxOpenTrades: 3, minConfidence: "MEDIUM",
-    mtfFilter: "OFF", autoInterval: 60000
+    mtfFilter: "OFF", autoInterval: 60000, useAiSLTP: true
   }));
   const [activeEAPairs, setActiveEAPairs] = useState(() => loadLS("dnr_activeEAPairs", ["BTCUSD","ETHUSD"]));
   const [analyses, setAnalyses] = useState(() => loadLS("dnr_analyses", {}));
@@ -738,7 +1156,10 @@ export default function App() {
   const [mtfData, setMtfData] = useState({});
   const [analyzing, setAnalyzing] = useState({});
   const [tab, setTab] = useState("chart");
-  const [eaRunning, setEaRunning] = useState(false);  // EA tidak auto-start saat refresh (safety)
+  // eaRunning persisted — so button shows STOP EA after reload if it was running
+  // Orders are still protected by 5 guards (Guard 3: existing positions check)
+  const [eaRunning, setEaRunning] = useState(() => loadLS("dnr_eaRunning", false));
+  const eaRestoredFromReload = useRef(loadLS("dnr_eaRunning", false)); // true if was running before reload
   const [pairCategory, setPairCategory] = useState("Majors");
   const [pairSearch, setPairSearch] = useState("");
 
@@ -752,6 +1173,7 @@ export default function App() {
   useEffect(() => { saveLS("dnr_eaConfig",     eaConfig);     }, [eaConfig]);
   useEffect(() => { saveLS("dnr_activeEAPairs",activeEAPairs);}, [activeEAPairs]);
   useEffect(() => { saveLS("dnr_analyses",     analyses);     }, [analyses]);
+  useEffect(() => { saveLS("dnr_eaRunning",    eaRunning);    }, [eaRunning]);
   useEffect(() => { saveLS("dnr_wsUrl",        wsUrl);        }, [wsUrl]);
 
   const wsRef = useRef(null);
@@ -763,23 +1185,40 @@ export default function App() {
     setEaLogs(prev => [...prev.slice(-499), { type, msg, time }]);
   }, []);
 
-  // On first mount: log session restore
+  // On first mount: restore session + auto-reconnect if was connected
   useEffect(() => {
-    const savedPos  = loadLS("dnr_positions", []);
-    const savedLogs = loadLS("dnr_eaLogs", []);
+    const savedPos     = loadLS("dnr_positions", []);
+    const savedLogs    = loadLS("dnr_eaLogs", []);
+    const wasConnected = loadLS("dnr_wasConnected", false);
+    const wasEaRunning = loadLS("dnr_eaRunning", false);
     const now = new Date().toLocaleString("id-ID");
+
     if (savedLogs.length > 0 || savedPos.length > 0) {
-      addLog("SYSTEM", `🔄 SESSION DIPULIHKAN [${now}] — ${savedPos.length} posisi | ${savedLogs.length} log entries sebelumnya`);
+      addLog("SYSTEM", `🔄 SESSION DILANJUTKAN [${now}] — ${savedPos.length} posisi | ${savedLogs.length} log | EA: ${wasEaRunning?"AKTIF (lanjut)":"STOPPED"}`);
     } else {
       addLog("SYSTEM", `🚀 DnR EA Terminal dimulai [${now}]`);
+    }
+
+    if (wasEaRunning) {
+      addLog("INFO", `🤖 EA dipulihkan — status RUNNING | Posisi existing dilindungi dari re-order`);
+    }
+
+    // Auto-reconnect to MT5 bridge if was previously connected
+    if (wasConnected) {
+      addLog("INFO", `🔌 Auto-reconnect ke ${loadLS("dnr_wsUrl","ws://localhost:8765")}...`);
+      // Delay slightly so UI renders first, then reconnect
+      setTimeout(() => connect(), 800);
     }
   // eslint-disable-next-line
   }, []);
 
   const clearAllData = () => {
-    ["dnr_positions","dnr_account","dnr_eaLogs","dnr_eaStats","dnr_analyses"].forEach(k => localStorage.removeItem(k));
+    ["dnr_positions","dnr_account","dnr_eaLogs","dnr_eaStats","dnr_analyses","dnr_eaRunning","dnr_wasConnected"].forEach(k => localStorage.removeItem(k));
     setPositions([]); setEaLogs([]); setEaStats({ totalTrades:0, winTrades:0, lossTrades:0, totalPnL:0, todayTrades:0 }); setAnalyses({});
-    addLog("SYSTEM", "🗑 Semua data lokal dihapus");
+    setEaRunning(false);
+    eaRestoredFromReload.current = false;
+    orderedThisSession.current.clear();
+    addLog("SYSTEM", "🗑 Semua data lokal dihapus — EA di-reset");
   };
 
   const startDemo = useCallback(() => {
@@ -817,6 +1256,7 @@ export default function App() {
     wsRef.current = ws;
     ws.onopen = () => {
       setWsStatus("connected"); setDemoMode(false); clearInterval(demoInterval.current);
+      saveLS("dnr_wasConnected", true);
       addLog("SYSTEM", `✅ Terhubung ke MT5 Bridge: ${wsUrl}`);
       // Request data awal
       ws.send(JSON.stringify({type:"get_account"}));
@@ -901,6 +1341,7 @@ export default function App() {
     ws.onerror = () => setWsStatus("error");
     ws.onclose = () => {
       setWsStatus("disconnected");
+      saveLS("dnr_wasConnected", false);
       addLog("WARN", "WebSocket terputus dari MT5 Bridge");
       clearInterval(window._posSync);
       startDemo();
@@ -927,19 +1368,39 @@ export default function App() {
   }, [candles, ticks, eaConfig, addLog]);
 
   // EA AUTO EXECUTE
+  // ─── ANTI-REORDER GUARD ────────────────────────────────────────────────
+  // Tracks tickets sent THIS session (cleared on reload — prevents duplicate orders)
+  const orderedThisSession = useRef(new Set());
+
   const executeEA = useCallback(async () => {
+    // GUARD 1: EA must be explicitly running
     if (!eaRunning) return;
+
+    // GUARD 2: eaRunning is never persisted — must be manually pressed after reload
     const scanStart = Date.now();
     addLog("SYSTEM", `━━━ SCAN MULAI — ${activeEAPairs.length} pair aktif [${activeEAPairs.join(", ")}] ━━━`);
 
     let executed = 0, skipped = 0, waited = 0;
 
     for (const symbol of activeEAPairs) {
+      // GUARD 3: Skip pair if already has open position this session
+      const alreadyOpen = positions.some(p => p.symbol === symbol || p.symbol === symbol.toLowerCase());
+      if (alreadyOpen) {
+        addLog("INFO", `${symbol} → SKIP — posisi sudah terbuka, tidak re-order`);
+        skipped++; continue;
+      }
+
+      // GUARD 4: Skip if symbol was already ordered this session (in-memory, resets on reload)
+      if (orderedThisSession.current.has(symbol)) {
+        addLog("INFO", `${symbol} → SKIP — sudah diorder sesi ini, tunggu posisi selesai`);
+        skipped++; continue;
+      }
+
       addLog("AI", `Menganalisis ${symbol}... (Groq AI)`);
       const analysis = await handleAnalyze(symbol);
 
       if (!analysis || analysis.signal === "WAIT") {
-        addLog("INFO", `${symbol} → WAIT | Trend: ${analysis?.trend||"—"} | ${analysis?.summary?.slice(0,50)||""}...`);
+        addLog("INFO", `${symbol} → WAIT | ${analysis?.summary?.slice(0,60)||""}...`);
         waited++; continue;
       }
 
@@ -966,70 +1427,143 @@ export default function App() {
 
       // Max open trades
       if (positions.length >= eaConfig.maxOpenTrades) {
-        addLog("WARN", `BERHENTI — Max posisi terbuka tercapai (${positions.length}/${eaConfig.maxOpenTrades})`);
+        addLog("WARN", `BERHENTI — Max posisi terbuka (${positions.length}/${eaConfig.maxOpenTrades})`);
         break;
       }
 
       // Max daily loss
       const currentLoss = account?.profit || 0;
       if (currentLoss < -eaConfig.maxDailyLoss) {
-        addLog("ERROR", `MAX DAILY LOSS TERCAPAI ($${currentLoss.toFixed(2)}) — EA dihentikan otomatis!`);
+        addLog("ERROR", `MAX DAILY LOSS TERCAPAI ($${currentLoss.toFixed(2)}) — EA dihentikan!`);
         setEaRunning(false); return;
       }
 
-      // Execute order
+      // Build SL/TP
       const lot = Math.min(eaConfig.defaultLot, eaConfig.maxLot);
-      addLog("TRADE", `ORDER KIRIM → ${symbol} ${analysis.signal} ${lot} lot @ ${analysis.entry_price} | SL:${analysis.sl_pips}p | TP:${analysis.tp_pips}p | R:R 1:${analysis.rr_ratio} | Conf:${analysis.confidence}`);
-      handleOrder(symbol, analysis.signal, String(lot), String(analysis.sl_pips), String(analysis.tp_pips));
+      const useAi = eaConfig.useAiSLTP !== false;
+      const smartDefault = getDefaultSLTP(symbol);
+      const entry = analysis.entry_price || ticks[symbol]?.bid || 0;
+
+      let slPips, tpPips, slPrice, tpPrice, slSource;
+      if (useAi && analysis.sl_pips > 0) {
+        slPips = analysis.sl_pips; tpPips = analysis.tp_pips;
+        slPrice = analysis.sl_price; tpPrice = analysis.tp_price;
+        slSource = "AI";
+      } else if (useAi) {
+        slPips = smartDefault.sl; tpPips = smartDefault.tp;
+        const calc = calcSLTP(symbol, analysis.signal, entry, slPips, tpPips);
+        slPrice = calc.sl; tpPrice = calc.tp;
+        slSource = "SmartDefault";
+      } else {
+        slPips = eaConfig.defaultSL; tpPips = eaConfig.defaultTP;
+        const calc = calcSLTP(symbol, analysis.signal, entry, slPips, tpPips);
+        slPrice = calc.sl; tpPrice = calc.tp;
+        slSource = "Manual";
+      }
+
+      const tp1P      = useAi ? (analysis.tp1_price||0) : tpPrice;
+      const tp2P      = useAi ? (analysis.tp2_price||tpPrice) : tpPrice;
+      const tp1Pips   = useAi ? (analysis.tp1_pips||0) : tpPips;
+      const tp2Pips   = useAi ? (analysis.tp2_pips||tpPips) : tpPips;
+      const slPlus    = useAi ? (analysis.sl_plus_price||slPrice) : slPrice;
+      const partialLot = +(lot * 0.5).toFixed(2);
+
+      addLog("TRADE", `ORDER → ${symbol} ${analysis.signal} ${lot}lot | SL:${slPrice} | TP1:${tp1P} | TP2:${tp2P} | SL+:${slPlus} | R:R ${analysis.rr1||"?"}/${analysis.rr2||"?"} | Src:${slSource}`);
+
+      // GUARD 5: Register symbol as ordered BEFORE sending (prevent race condition)
+      orderedThisSession.current.add(symbol);
+
+      handleOrder(symbol, analysis.signal, String(lot), String(slPips), String(tp2Pips), slPrice, tp2P, tp1P, slPlus, partialLot);
       executed++;
     }
 
     const elapsed = ((Date.now()-scanStart)/1000).toFixed(1);
-    addLog("SYSTEM", `━━━ SCAN SELESAI ${elapsed}s — Eksekusi:${executed} | Skip:${skipped} | Wait:${waited} | Posisi:${positions.length}/${eaConfig.maxOpenTrades} | P&L:${account?.profit>=0?"+":""}${account?.profit?.toFixed(2)||"0"} ━━━`);
-  }, [eaRunning, activeEAPairs, handleAnalyze, eaConfig, mtfData, positions.length, account]);
+    addLog("SYSTEM", `━━━ SCAN SELESAI ${elapsed}s — Eksekusi:${executed} | Skip:${skipped} | Wait:${waited} | Posisi:${positions.length}/${eaConfig.maxOpenTrades} ━━━`);
+  }, [eaRunning, activeEAPairs, handleAnalyze, eaConfig, mtfData, positions, account, ticks]);
 
   useEffect(() => {
     if (eaRunning) {
-      addLog("INFO", `EA dimulai — interval ${eaConfig.autoInterval/1000}s | Pairs: ${activeEAPairs.join(", ")}`);
-      executeEA();
-      eaTimerRef.current = setInterval(executeEA, eaConfig.autoInterval);
+      const isReload = eaRestoredFromReload.current;
+
+      if (isReload) {
+        // ── RELOAD CASE: EA was running before reload ──────────────────
+        // Do NOT clear orderedThisSession — keep it empty (new session)
+        // Guards will protect existing positions from re-order
+        addLog("INFO", `🔄 EA DILANJUTKAN setelah reload — interval ${eaConfig.autoInterval/1000}s`);
+        addLog("INFO", `🛡 Guard aktif: posisi existing terlindungi dari re-order`);
+        // Mark as no longer "restored" so next toggle is treated as fresh start
+        eaRestoredFromReload.current = false;
+        // Delay first scan — give time for MT5 to sync positions first
+        const firstScanDelay = setTimeout(() => {
+          addLog("INFO", `⏱ Delay 5s selesai — mulai scan pertama...`);
+          executeEA();
+        }, 5000);
+        eaTimerRef.current = setInterval(executeEA, eaConfig.autoInterval);
+        return () => { clearTimeout(firstScanDelay); clearInterval(eaTimerRef.current); };
+      } else {
+        // ── FRESH START: user pressed START EA manually ─────────────────
+        addLog("INFO", `▶ EA DIMULAI — interval ${eaConfig.autoInterval/1000}s | Pairs: ${activeEAPairs.join(", ")}`);
+        orderedThisSession.current.clear(); // fresh slate
+        executeEA();
+        eaTimerRef.current = setInterval(executeEA, eaConfig.autoInterval);
+      }
     } else {
       clearInterval(eaTimerRef.current);
+      if (eaTimerRef.current) addLog("INFO", "⏹ EA DIHENTIKAN");
     }
     return () => clearInterval(eaTimerRef.current);
   }, [eaRunning, eaConfig.autoInterval]);
 
-  const handleOrder = (symbol, action, volume, sl, tp) => {
+  const handleOrder = (symbol, action, volume, slPips, tpPips, slPriceArg, tp2PriceArg, tp1PriceArg=0, slPlusPrice=0, partialLot=0) => {
+    const tick = ticks[symbol];
+    const entryAsk = tick?.ask || 0;
+    const entryBid = tick?.bid || 0;
+    const entryPrice = action === "BUY" ? entryAsk : entryBid;
+    const slPipsNum = parseFloat(slPips) || getDefaultSLTP(symbol).sl;
+    const tpPipsNum = parseFloat(tpPips) || getDefaultSLTP(symbol).tp;
+    const { sl: slCalc, tp: tp2Calc } = calcSLTP(symbol, action, entryPrice, slPipsNum, tpPipsNum);
+    const slPrice  = slPriceArg  && slPriceArg  > 0 ? slPriceArg  : slCalc;
+    const tp2Price = tp2PriceArg && tp2PriceArg > 0 ? tp2PriceArg : tp2Calc;
+    const tp1Price = tp1PriceArg && tp1PriceArg > 0 ? tp1PriceArg : 0;
+    const pipSz    = getPipSize(symbol);
+    const volNum   = parseFloat(volume);
+    const partLot  = partialLot || +(volNum * 0.5).toFixed(2);
+
     if (!demoMode && wsRef.current?.readyState === 1) {
-      const orderPayload = {
-        type: "send_order",
-        symbol,
-        action,
-        volume: parseFloat(volume),
-        sl: parseFloat(sl)||0,
-        tp: parseFloat(tp)||0,
-        comment: `DnR_EA_${symbol}`   // fix: tidak pakai action agar tidak jadi EA_SELL_SELL
+      // Send single order to MT5, TP = TP2 (final target)
+      const payload = {
+        type:"send_order", symbol, action,
+        volume: volNum,
+        sl: slPrice, tp: tp2Price,
+        sl_pips: slPipsNum, tp_pips: tpPipsNum,
+        pip_size: pipSz,
+        tp1: tp1Price, sl_plus: slPlusPrice,
+        partial_lot: partLot,
+        comment: `DnR_EA_${symbol}`
       };
-      addLog("AI", `📡 Kirim ke MT5: ${symbol} ${action} ${volume}lot SL:${sl} TP:${tp}`);
-      wsRef.current.send(JSON.stringify(orderPayload));
-      // Request sync posisi 2 detik setelah kirim order (antisipasi bridge yang tidak kirim order_result)
+      addLog("AI", `📡 MT5 → ${symbol} ${action} ${volNum}lot | SL:${slPrice} | TP1:${tp1Price||"—"} | TP2:${tp2Price} | SL+:${slPlusPrice||"—"} | PartialClose:${partLot}lot@TP1`);
+      wsRef.current.send(JSON.stringify(payload));
       setTimeout(() => {
-        if (wsRef.current?.readyState === 1) {
+        if (wsRef.current?.readyState===1) {
           wsRef.current.send(JSON.stringify({type:"get_positions"}));
           wsRef.current.send(JSON.stringify({type:"get_account"}));
         }
       }, 2000);
     } else {
+      // DEMO MODE
       const ticket = Math.floor(Math.random()*90000+10000);
-      const tick = ticks[symbol];
-      addLog("TRADE", `[DEMO] ${action} ${volume} lot ${symbol} — Ticket #${ticket}`);
+      addLog("TRADE", `[DEMO] #${ticket} ${action} ${volNum}lot ${symbol} | Entry:${entryPrice} | SL:${slPrice} | TP1:${tp1Price||"—"} | TP2:${tp2Price} | SL+:${slPlusPrice||"—"}`);
       setPositions(prev => [...prev, {
-        ticket, symbol, type:action, volume:parseFloat(volume),
-        price_open: action==="BUY" ? tick?.ask||0 : tick?.bid||0,
-        price_current: action==="BUY" ? tick?.ask||0 : tick?.bid||0,
-        sl: sl ? (action==="BUY" ? (tick?.bid||0) - parseFloat(sl)*0.0001 : (tick?.bid||0) + parseFloat(sl)*0.0001) : 0,
-        tp: tp ? (action==="BUY" ? (tick?.bid||0) + parseFloat(tp)*0.0001 : (tick?.bid||0) - parseFloat(tp)*0.0001) : 0,
-        profit: 0, swap:0, time:new Date().toISOString(), comment:`EA_${action}`
+        ticket, symbol, type:action,
+        volume: volNum, volume_initial: volNum,
+        price_open: entryPrice, price_current: entryPrice,
+        sl: slPrice, tp: tp2Price,
+        tp1: tp1Price, sl_plus: slPlusPrice,
+        partial_lot: partLot,
+        tp1_hit: false,       // track if TP1 already triggered
+        sl_pips: slPipsNum, tp_pips: tpPipsNum, pip_size: pipSz,
+        profit: 0, swap:0, time:new Date().toISOString(),
+        comment:`DnR_EA_${symbol}`
       }]);
       setEaStats(p=>({...p,totalTrades:p.totalTrades+1,todayTrades:p.todayTrades+1}));
     }
@@ -1037,19 +1571,67 @@ export default function App() {
 
   const handleClose = (ticket) => {
     const pos = positions.find(p=>p.ticket===ticket);
+    if (pos) {
+      // Allow EA to re-order this symbol after position is closed
+      orderedThisSession.current.delete(pos.symbol);
+      orderedThisSession.current.delete((pos.symbol||"").toLowerCase());
+    }
     if (!demoMode && wsRef.current?.readyState === 1) {
       wsRef.current.send(JSON.stringify({type:"close_position",ticket}));
     } else {
       const pnl = (Math.random()-0.45)*50;
       setEaStats(p=>({...p, totalPnL:p.totalPnL+pnl, winTrades:pnl>0?p.winTrades+1:p.winTrades, lossTrades:pnl<0?p.lossTrades+1:p.lossTrades}));
       setPositions(p=>p.filter(pos=>pos.ticket!==ticket));
-      addLog("TRADE",`Posisi #${ticket} ditutup`);
+      addLog("TRADE",`Posisi #${ticket} ditutup — ${pos?.symbol||""} siap di-scan ulang`);
     }
   };
+
+  // Monitor tick prices → trigger partial close when TP1 is hit (demo + live)
+  useEffect(() => {
+    setPositions(prev => {
+      let changed = false;
+      const next = prev.map(pos => {
+        if (!pos.tp1 || pos.tp1_hit || pos.tp1 <= 0) return pos;
+        const curTick = ticks[pos.symbol];
+        if (!curTick) return pos;
+        const curPrice = pos.type === "BUY" ? curTick.bid : curTick.ask;
+        const tp1Hit   = pos.type === "BUY" ? curPrice >= pos.tp1 : curPrice <= pos.tp1;
+        if (!tp1Hit) return pos;
+
+        changed = true;
+        const partLot     = pos.partial_lot || +(pos.volume * 0.5).toFixed(2);
+        const remainLot   = +(pos.volume - partLot).toFixed(2);
+        const tp1Pips = Math.round(Math.abs(pos.tp1 - pos.price_open) / (pos.pip_size || getPipSize(pos.symbol) || 0.0001));
+        addLog("TRADE", `✅ TP1 HIT #${pos.ticket} ${pos.symbol} @ ${pos.tp1} — Partial close ${partLot}lot (${tp1Pips}p) | Sisa ${remainLot}lot lanjut ke TP2 ${pos.tp}`);
+        addLog("INFO",  `🔒 SL digeser ke SL+ ${pos.sl_plus} untuk posisi sisa #${pos.ticket}`);
+
+        // In live mode: send partial_close + modify_sl to bridge
+        if (!demoMode && wsRef.current?.readyState===1) {
+          wsRef.current.send(JSON.stringify({type:"partial_close", ticket:pos.ticket, volume:partLot}));
+          setTimeout(()=>{
+            if (wsRef.current?.readyState===1)
+              wsRef.current.send(JSON.stringify({type:"modify_sl", ticket:pos.ticket, sl:pos.sl_plus}));
+          }, 500);
+        }
+
+        return {
+          ...pos,
+          volume: remainLot,
+          sl: pos.sl_plus || pos.sl,   // move SL to SL+
+          tp1_hit: true,                // prevent re-trigger
+        };
+      });
+      if (changed) return next;
+      return prev;
+    });
+  // eslint-disable-next-line
+  }, [ticks]);
 
   const analyzeAll = async () => { for (const p of PAIRS) await handleAnalyze(p); };
   const statusColor = {connected:"#4ade80",connecting:"#fb923c",disconnected:"#475569",error:"#f87171"}[wsStatus];
   const winRate = eaStats.totalTrades > 0 ? ((eaStats.winTrades/eaStats.totalTrades)*100).toFixed(1) : "0.0";
+
+  if (!isLoggedIn) return <LoginPage onLogin={()=>setIsLoggedIn(true)} />;
 
   return (
     <div style={{background:"#050c18",minHeight:"100vh",fontFamily:"monospace",color:"#e2e8f0",padding:0}}>
@@ -1058,6 +1640,9 @@ export default function App() {
       <div style={{background:"#070e1d",borderBottom:"1px solid #0f172a",padding:"8px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <span style={{color:"#06b6d4",fontSize:16,fontWeight:700,letterSpacing:2}}>⬡ DnR EA TERMINAL</span>
+          <span style={{color:"#1e3a5f",fontSize:12}}>|</span>
+          <span style={{color:"#334155",fontSize:10,letterSpacing:1}}>👤 {loadLS("dnr_auth",{}).user||"USER"}</span>
+          <button onClick={()=>{saveLS("dnr_auth",null);saveLS("dnr_wasConnected",false);window.location.reload();}} style={{background:"#0f172a",border:"1px solid #1e293b",color:"#475569",padding:"2px 8px",borderRadius:4,cursor:"pointer",fontSize:9,fontFamily:"monospace",letterSpacing:1}}>LOGOUT</button>
           <span style={{color:"#1e3a5f",fontSize:12}}>|</span>
           <span style={{color:demoMode?"#fb923c":"#4ade80",fontSize:10,letterSpacing:1}}>● {demoMode?"DEMO":"LIVE MT5"}</span>
           <span style={{color:"#1e3a5f",fontSize:12}}>|</span>
@@ -1092,9 +1677,25 @@ export default function App() {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
               <span style={{color:"#06b6d4",fontSize:10,letterSpacing:2}}>EA CONTROL</span>
               <button
-                onClick={()=>{ setEaRunning(r=>!r); if(eaRunning) addLog("INFO","EA dihentikan oleh user"); }}
+                onClick={()=>{
+                  if (eaRunning) {
+                    addLog("INFO","⏹ EA dihentikan oleh user");
+                    eaRestoredFromReload.current = false;
+                  }
+                  setEaRunning(r=>!r);
+                }}
                 style={{background:eaRunning?"#2d0b0b":"#052e16",border:`1px solid ${eaRunning?"#dc2626":"#16a34a"}`,color:eaRunning?"#f87171":"#4ade80",padding:"4px 14px",borderRadius:4,cursor:"pointer",fontSize:11,fontFamily:"monospace",fontWeight:700,letterSpacing:1}}
               >{eaRunning?"⏹ STOP EA":"▶ START EA"}</button>
+              {eaRunning && eaRestoredFromReload.current && (
+                <div style={{fontSize:9,color:"#06b6d4",fontFamily:"monospace",marginTop:4,textAlign:"center",letterSpacing:0.5,padding:"2px 4px",background:"#0a0f1e",borderRadius:4}}>
+                  🔄 Dilanjutkan dari reload — scan mulai 5 detik
+                </div>
+              )}
+              {!eaRunning && positions.length > 0 && (
+                <div style={{fontSize:9,color:"#fb923c",fontFamily:"monospace",marginTop:4,textAlign:"center",letterSpacing:0.5}}>
+                  ⚠ {positions.length} posisi aktif — tekan START EA untuk lanjutkan
+                </div>
+              )}
             </div>
             {/* EA Stats */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
@@ -1258,10 +1859,54 @@ export default function App() {
                   </div>
                   <p style={{color:"#94a3b8",fontSize:12,lineHeight:1.6,margin:"0 0 10px 0"}}>{analyses[selected].summary||analyses[selected].trend}</p>
                   <div style={{display:"flex",gap:12,fontSize:10,flexWrap:"wrap",borderTop:"1px solid #0f172a",paddingTop:8}}>
-                    {[["Trend",analyses[selected].trend,"#94a3b8"],["Support",analyses[selected].support,"#4ade80"],["Resistance",analyses[selected].resistance,"#f87171"],["SMA",analyses[selected].sma_cross,"#06b6d4"],["Momentum",analyses[selected].momentum,"#a78bfa"],["SL",`${analyses[selected].sl_pips} pips`,"#f97316"],["TP",`${analyses[selected].tp_pips} pips`,"#a78bfa"]].map(([k,v,c])=>(
-                      <span key={k} style={{color:"#334155"}}>{k}: <span style={{color:c,fontWeight:700}}>{v}</span></span>
+                    {[
+                      ["Trend",analyses[selected].trend,"#94a3b8"],
+                      ["RSI",analyses[selected].rsi,"#06b6d4"],
+                      ["SMA",analyses[selected].sma_cross,"#06b6d4"],
+                      ["Momentum",analyses[selected].momentum,"#a78bfa"],
+                      ["Support",analyses[selected].support,"#4ade80"],
+                      ["Resistance",analyses[selected].resistance,"#f87171"],
+                    ].map(([k,v,c])=>(
+                      <span key={k} style={{color:"#334155"}}>{k}: <span style={{color:c,fontWeight:700}}>{v||"—"}</span></span>
                     ))}
                   </div>
+                  {/* SL/TP Multi-Target Box */}
+                  {analyses[selected].sl_price > 0 && (() => {
+                    const a = analyses[selected];
+                    const isAI = a._sltp_source === "AI";
+                    return (
+                      <div style={{marginTop:8,background:"#0a0f1e",borderRadius:8,border:"1px solid #1e293b",overflow:"hidden"}}>
+                        {/* Header */}
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",borderBottom:"1px solid #0f172a"}}>
+                          <span style={{fontSize:9,fontFamily:"monospace",background:isAI?"#052e16":"#1c1917",border:`1px solid ${isAI?"#16a34a":"#78716c"}`,color:isAI?"#4ade80":"#a8a29e",padding:"1px 7px",borderRadius:3,fontWeight:700}}>
+                            {isAI?"🤖 AI CALCULATED":"⚠ FALLBACK"}
+                          </span>
+                          <span style={{color:"#334155",fontSize:9,fontFamily:"monospace"}}>1 pip = <span style={{color:"#94a3b8"}}>{a.pip_size}</span></span>
+                        </div>
+                        {/* Grid */}
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:0}}>
+                          {[
+                            ["🛡 SL", a.sl_pips+"p", a.sl_price, "#f97316", "Stop Loss — keluar jika loss"],
+                            ["🎯 TP1", a.tp1_pips+"p", a.tp1_price, "#34d399", `Close ${a.tp1_lot_pct||50}% lot — ambil profit awal`],
+                            ["🏆 TP2", a.tp2_pips+"p", a.tp2_price, "#a78bfa", `Close ${a.tp2_lot_pct||50}% lot — full target`],
+                            ["🔒 SL+", a.sl_plus_pips+"p", a.sl_plus_price, "#06b6d4", "Geser SL ke sini setelah TP1 hit"],
+                          ].map(([label, pips, price, color, tip])=>(
+                            <div key={label} style={{padding:"8px 10px",borderRight:"1px solid #0f172a"}}>
+                              <div style={{color:"#334155",fontSize:9,marginBottom:3}}>{label}</div>
+                              <div style={{color,fontFamily:"monospace",fontWeight:700,fontSize:11}}>{pips||"—"}</div>
+                              <div style={{color,fontFamily:"monospace",fontSize:10,opacity:0.8}}>{price||"—"}</div>
+                              <div style={{color:"#1e3a5f",fontSize:8,marginTop:2,lineHeight:1.3}}>{tip}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {/* R:R row */}
+                        <div style={{display:"flex",gap:16,padding:"5px 10px",borderTop:"1px solid #0f172a"}}>
+                          <span style={{color:"#334155",fontSize:9,fontFamily:"monospace"}}>R:R TP1: <span style={{color:"#34d399",fontWeight:700}}>1:{a.rr1||"?"}</span></span>
+                          <span style={{color:"#334155",fontSize:9,fontFamily:"monospace"}}>R:R TP2: <span style={{color:"#a78bfa",fontWeight:700}}>1:{a.rr2||"?"}</span></span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {analyses[selected].signal_reason && <p style={{color:"#475569",fontSize:11,marginTop:8,borderTop:"1px solid #0f172a",paddingTop:8}}>{analyses[selected].signal_reason}</p>}
                 </div>
               )}
@@ -1279,7 +1924,7 @@ export default function App() {
           {/* EA CONFIG TAB */}
           {tab==="ea" && (
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <EAConfigPanel config={eaConfig} onChange={setEaConfig}/>
+              <EAConfigPanel config={eaConfig} onChange={setEaConfig} analyses={analyses}/>
               <div style={{background:"#070e1d",border:"1px solid #1e293b",borderRadius:10,padding:14}}>
                 <div style={{color:"#06b6d4",fontSize:10,letterSpacing:2,marginBottom:10}}>📖 PETUNJUK EA</div>
                 <div style={{color:"#475569",fontSize:11,lineHeight:1.8}}>
