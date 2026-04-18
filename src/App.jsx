@@ -241,6 +241,48 @@ function getPairSpread(symbol) {
   return 0.00012;
 }
 
+// ===================== SYMBOL NORMALIZATION =====================
+// Common broker suffixes/prefixes used by Exness and other brokers
+const BROKER_VARIANTS = [
+  // suffixes
+  "m",".",".r",".e","pro","ecn","raw","_pro","_ecn","_raw",
+  "_i","_c","_s","_n","_h","#","!","+"
+];
+
+// Strip broker suffix/prefix → get canonical symbol name
+function normalizeSymbol(raw) {
+  if (!raw) return "";
+  let s = raw.toUpperCase().trim();
+  // Remove trailing non-alpha chars and known suffixes
+  s = s.replace(/[.#+!].*$/, "");        // strip after . # + !
+  s = s.replace(/(M|PRO|ECN|RAW|_I|_C|_S|_N|_H)$/, ""); // strip trailing suffixes
+  return s;
+}
+
+// Check if a raw broker symbol matches a canonical symbol
+function symbolMatches(raw, canonical) {
+  return normalizeSymbol(raw) === canonical.toUpperCase();
+}
+
+// Global broker symbol map: canonical → actual broker name
+// Built at runtime from tick/position data received from MT5
+const brokerSymbolMap = {}; // e.g. { "BTCUSD": "BTCUSDm", "XAUUSD": "XAUUSDm" }
+
+// Register a broker symbol when we see it from MT5
+function registerBrokerSymbol(rawSymbol) {
+  const canonical = normalizeSymbol(rawSymbol);
+  if (canonical && PAIRS.includes(canonical) && rawSymbol !== canonical) {
+    if (brokerSymbolMap[canonical] !== rawSymbol) {
+      brokerSymbolMap[canonical] = rawSymbol;
+    }
+  }
+}
+
+// Get the actual broker symbol to use when sending orders
+function getBrokerSymbol(canonical) {
+  return brokerSymbolMap[canonical] || canonical;
+}
+
 // ===================== MOCK DATA =====================
 function generateMockCandles(symbol, count=80) {
   const base = BASE_PRICES[symbol] || 1;
@@ -603,6 +645,48 @@ function MTFBadge({ signal }) {
       color: isBuy ? "#4ade80" : "#f87171",
       padding:"1px 8px",borderRadius:3,fontSize:10,fontFamily:"monospace",fontWeight:700
     }}>{isBuy ? "▲ BUY" : "▼ SELL"}</span>
+  );
+}
+
+// SYMBOL MAP PANEL — shows auto-detected broker names
+function SymbolMapPanel() {
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => forceUpdate(n=>n+1), 3000);
+    return () => clearInterval(t);
+  }, []);
+
+  const entries = Object.entries(brokerSymbolMap);
+  if (entries.length === 0) return (
+    <div style={{background:"#070e1d",border:"1px solid #1e293b",borderRadius:8,padding:"10px 14px",marginTop:8}}>
+      <div style={{color:"#1e3a5f",fontSize:9,fontFamily:"monospace",letterSpacing:2}}>
+        🔍 SYMBOL MAP — Belum ada deteksi. Hubungkan ke MT5 untuk auto-detect.
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{background:"#070e1d",border:"1px solid #1e293b",borderRadius:8,padding:"10px 14px",marginTop:8}}>
+      <div style={{color:"#475569",fontSize:9,fontFamily:"monospace",letterSpacing:2,marginBottom:8}}>
+        🔍 AUTO-DETECTED SYMBOL MAP ({entries.length} pair)
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+        {entries.map(([canonical, broker]) => (
+          <div key={canonical} style={{
+            background:"#0a0f1e", border:"1px solid #1e3a5f",
+            borderRadius:4, padding:"3px 8px", fontSize:9, fontFamily:"monospace",
+            display:"flex", gap:4, alignItems:"center"
+          }}>
+            <span style={{color:"#475569"}}>{canonical}</span>
+            <span style={{color:"#334155"}}>→</span>
+            <span style={{color:"#06b6d4", fontWeight:700}}>{broker}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{color:"#1e3a5f",fontSize:8,marginTop:6,fontFamily:"monospace"}}>
+        Map dibangun otomatis dari data tick/posisi MT5 yang diterima
+      </div>
+    </div>
   );
 }
 
@@ -1147,7 +1231,7 @@ export default function App() {
   const [eaConfig, setEaConfig] = useState(() => loadLS("dnr_eaConfig", {
     defaultSL: 200, defaultTP: 500, maxLot: 0.5, defaultLot: 0.1,
     maxDailyLoss: 500, maxOpenTrades: 3, minConfidence: "MEDIUM",
-    mtfFilter: "OFF", autoInterval: 60000, useAiSLTP: true
+    mtfFilter: "OFF", autoInterval: 60000, useAiSLTP: true, symbolSuffix: ""
   }));
   const [activeEAPairs, setActiveEAPairs] = useState(() => loadLS("dnr_activeEAPairs", ["BTCUSD","ETHUSD"]));
   const [analyses, setAnalyses] = useState(() => loadLS("dnr_analyses", {}));
@@ -1261,7 +1345,7 @@ export default function App() {
       // Request data awal
       ws.send(JSON.stringify({type:"get_account"}));
       ws.send(JSON.stringify({type:"get_positions"}));
-      PAIRS.forEach(p => ws.send(JSON.stringify({type:"get_candles",symbol:p,timeframe,count:100})));
+      PAIRS.forEach(p => ws.send(JSON.stringify({type:"get_candles",symbol:getBrokerSymbol(p),timeframe,count:100})));
       // Sync posisi berkala setiap 5 detik
       if (window._posSync) clearInterval(window._posSync);
       window._posSync = setInterval(() => {
@@ -1277,16 +1361,36 @@ export default function App() {
 
         // Tick data
         if (msg.type==="ticks") {
-          setTicks(prev=>({...prev,...msg.data}));
+          // Normalize tick keys: build canonical→broker map, store ticks by canonical name
+          const normalized = {};
+          Object.entries(msg.data||{}).forEach(([rawSym, tickData]) => {
+            registerBrokerSymbol(rawSym);
+            const canonical = normalizeSymbol(rawSym);
+            const key = PAIRS.includes(canonical) ? canonical : rawSym.toUpperCase();
+            normalized[key] = { ...tickData, _broker_symbol: rawSym };
+          });
+          setTicks(prev=>({...prev,...normalized}));
 
         // Candle data
         } else if (msg.type==="candles") {
-          setCandles(prev=>({...prev,[msg.symbol]:msg.data}));
+          const rawSym = msg.symbol || "";
+          registerBrokerSymbol(rawSym);
+          const canonical = normalizeSymbol(rawSym);
+          const key = PAIRS.includes(canonical) ? canonical : rawSym.toUpperCase();
+          setCandles(prev=>({...prev,[key]:msg.data}));
 
         // Account / init / positions sync
         } else if (["account","init","positions_update","update"].includes(msg.type)) {
-          if (msg.positions) setPositions(msg.positions);
-          if (msg.account)   setAccount(msg.account);
+          if (msg.positions) setPositions(
+            msg.positions.map(p => {
+              const rawSym = p.symbol || "";
+              registerBrokerSymbol(rawSym);
+              const canonical = normalizeSymbol(rawSym);
+              const sym = PAIRS.includes(canonical) ? canonical : rawSym.toUpperCase();
+              return { ...p, symbol: sym, _broker_symbol: rawSym };
+            })
+          );
+          if (msg.account) setAccount(msg.account);
 
         // Order success — handle SEMUA format bridge yang mungkin
         } else if (
@@ -1530,9 +1634,13 @@ export default function App() {
     const partLot  = partialLot || +(volNum * 0.5).toFixed(2);
 
     if (!demoMode && wsRef.current?.readyState === 1) {
+      // Use actual broker symbol name (e.g. BTCUSDm instead of BTCUSD)
+      const brokerSym = getBrokerSymbol(symbol);
+      if (brokerSym !== symbol)
+        addLog("INFO", `🔄 Symbol mapping: ${symbol} → ${brokerSym} (broker name)`);
       // Send single order to MT5, TP = TP2 (final target)
       const payload = {
-        type:"send_order", symbol, action,
+        type:"send_order", symbol: brokerSym, action,
         volume: volNum,
         sl: slPrice, tp: tp2Price,
         sl_pips: slPipsNum, tp_pips: tpPipsNum,
@@ -1800,7 +1908,7 @@ export default function App() {
             </div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {TIMEFRAMES.map(tf=>(
-                <button key={tf} onClick={()=>{setTimeframe(tf); if(!demoMode&&wsRef.current?.readyState===1) wsRef.current.send(JSON.stringify({type:"get_candles",symbol:selected,timeframe:tf,count:100}));}} style={{
+                <button key={tf} onClick={()=>{setTimeframe(tf); if(!demoMode&&wsRef.current?.readyState===1) wsRef.current.send(JSON.stringify({type:"get_candles",symbol:getBrokerSymbol(selected),timeframe:tf,count:100}));}} style={{
                   background:timeframe===tf?"#1e3a5f":"#0f172a", border:`1px solid ${timeframe===tf?"#1d4ed8":"#1e293b"}`,
                   color:timeframe===tf?"#93c5fd":"#475569", padding:"3px 10px",borderRadius:4,cursor:"pointer",fontSize:11,fontFamily:"monospace"
                 }}>{tf}</button>
