@@ -1877,7 +1877,16 @@ export default function App() {
           <span style={{color:"#06b6d4",fontSize:16,fontWeight:700,letterSpacing:2}}>⬡ DnR EA TERMINAL</span>
           <span style={{color:"#1e3a5f",fontSize:12}}>|</span>
           <span style={{color:"#334155",fontSize:10,letterSpacing:1}}>👤 {loadLS("dnr_auth",{}).user||"USER"}</span>
-          <button onClick={()=>{saveLS("dnr_auth",null);saveLS("dnr_wasConnected",false);window.location.reload();}} style={{background:"#0f172a",border:"1px solid #1e293b",color:"#475569",padding:"2px 8px",borderRadius:4,cursor:"pointer",fontSize:9,fontFamily:"monospace",letterSpacing:1}}>LOGOUT</button>
+          <button onClick={()=>{
+            // Hapus semua data sesi — tampilan bersih saat login berikutnya
+            [
+              "dnr_auth","dnr_wasConnected","dnr_eaRunning",
+              "dnr_positions","dnr_account","dnr_eaLogs",
+              "dnr_eaStats","dnr_analyses","dnr_selected",
+              "dnr_timeframe","dnr_eaConfig","dnr_activeEAPairs","dnr_wsUrl"
+            ].forEach(k => localStorage.removeItem(k));
+            window.location.reload();
+          }} style={{background:"#0f172a",border:"1px solid #1e293b",color:"#475569",padding:"2px 8px",borderRadius:4,cursor:"pointer",fontSize:9,fontFamily:"monospace",letterSpacing:1}}>LOGOUT</button>
           <span style={{color:"#1e3a5f",fontSize:12}}>|</span>
           <span style={{color:demoMode?"#fb923c":"#4ade80",fontSize:10,letterSpacing:1}}>● {demoMode?"DEMO":"LIVE MT5"}</span>
           <span style={{color:"#1e3a5f",fontSize:12}}>|</span>
