@@ -1435,15 +1435,48 @@ export default function App() {
 
         // Account / init / positions sync
         } else if (["account","init","positions_update","update"].includes(msg.type)) {
-          if (msg.positions) setPositions(
-            msg.positions.map(p => {
+          if (msg.positions) {
+            const incomingPositions = msg.positions.map(p => {
               const rawSym = p.symbol || "";
               registerBrokerSymbol(rawSym);
               const canonical = normalizeSymbol(rawSym);
               const sym = PAIRS.includes(canonical) ? canonical : rawSym.toUpperCase();
               return { ...p, symbol: sym, _broker_symbol: rawSym };
-            })
-          );
+            });
+
+            // ── DETEKSI POSISI YANG SUDAH CLOSE (TP/SL HIT dari MT5) ────────
+            setPositions(prevPositions => {
+              const incomingTickets = new Set(incomingPositions.map(p => p.ticket));
+
+              prevPositions.forEach(prevPos => {
+                const stillOpen = incomingTickets.has(prevPos.ticket);
+                if (!stillOpen) {
+                  // Posisi ini ada di lokal tapi sudah tidak ada di MT5 → sudah close
+                  const sym = prevPos.symbol;
+                  orderedThisSession.current.delete(sym);
+
+                  // Set cooldown 10 menit — EA tidak akan entry ulang sebelum waktu ini
+                  cooldownMap.current[sym] = Date.now() + REENTRY_COOLDOWN_MS;
+
+                  addLog("TRADE", `🔔 POSISI CLOSE TERDETEKSI — #${prevPos.ticket} ${sym} | Cooldown entry ulang: 10 menit`);
+                  addLog("INFO",  `⏱ ${sym} → scan ulang diizinkan setelah ${new Date(cooldownMap.current[sym]).toLocaleTimeString("id-ID")}`);
+
+                  // Update stats P&L jika ada info profit dari MT5
+                  if (prevPos.profit !== undefined) {
+                    const pnl = parseFloat(prevPos.profit) || 0;
+                    setEaStats(p => ({
+                      ...p,
+                      totalPnL: p.totalPnL + pnl,
+                      winTrades:  pnl > 0 ? p.winTrades  + 1 : p.winTrades,
+                      lossTrades: pnl < 0 ? p.lossTrades + 1 : p.lossTrades,
+                    }));
+                  }
+                }
+              });
+
+              return incomingPositions;
+            });
+          }
           if (msg.account) setAccount(msg.account);
 
         // Order success — handle SEMUA format bridge yang mungkin
@@ -1483,6 +1516,13 @@ export default function App() {
             if (msg.profit !== undefined) {
               const pnl = parseFloat(msg.profit)||0;
               setEaStats(p=>({...p, totalPnL:p.totalPnL+pnl, winTrades:pnl>0?p.winTrades+1:p.winTrades, lossTrades:pnl<0?p.lossTrades+1:p.lossTrades}));
+            }
+            // Set cooldown jika kita tahu symbolnya dari msg
+            if (msg.symbol) {
+              const canonical = normalizeSymbol(msg.symbol);
+              orderedThisSession.current.delete(canonical);
+              cooldownMap.current[canonical] = Date.now() + REENTRY_COOLDOWN_MS;
+              addLog("INFO", `⏱ ${canonical} → cooldown 10 menit, entry ulang setelah ${new Date(cooldownMap.current[canonical]).toLocaleTimeString("id-ID")}`);
             }
             if (ws.readyState === 1) ws.send(JSON.stringify({type:"get_positions"}));
           }
@@ -1530,6 +1570,12 @@ export default function App() {
   // Tracks tickets sent THIS session (cleared on reload — prevents duplicate orders)
   const orderedThisSession = useRef(new Set());
 
+  // ─── COOLDOWN MAP ──────────────────────────────────────────────────────
+  // Menyimpan timestamp kapan symbol boleh di-entry ulang setelah posisi close
+  // Format: { "EURUSD": 1714000000000 }  ← unix ms, boleh scan lagi setelah waktu ini
+  const cooldownMap = useRef({});
+  const REENTRY_COOLDOWN_MS = 10 * 60 * 1000; // 10 menit
+
   const executeEA = useCallback(async () => {
     // GUARD 1: EA must be explicitly running
     if (!eaRunning) return;
@@ -1551,6 +1597,14 @@ export default function App() {
       // GUARD 4: Skip if symbol was already ordered this session (in-memory, resets on reload)
       if (orderedThisSession.current.has(symbol)) {
         addLog("INFO", `${symbol} → SKIP — sudah diorder sesi ini, tunggu posisi selesai`);
+        skipped++; continue;
+      }
+
+      // GUARD 5: Cooldown 10 menit setelah posisi close (TP/SL hit)
+      const cooldownUntil = cooldownMap.current[symbol] || 0;
+      if (Date.now() < cooldownUntil) {
+        const remaining = Math.ceil((cooldownUntil - Date.now()) / 1000 / 60);
+        addLog("INFO", `${symbol} → COOLDOWN — entry ulang dalam ${remaining} menit`);
         skipped++; continue;
       }
 
@@ -1734,9 +1788,11 @@ export default function App() {
   const handleClose = (ticket) => {
     const pos = positions.find(p=>p.ticket===ticket);
     if (pos) {
-      // Allow EA to re-order this symbol after position is closed
+      // Set cooldown 10 menit — EA tidak langsung re-entry setelah close manual
       orderedThisSession.current.delete(pos.symbol);
-      orderedThisSession.current.delete((pos.symbol||"").toLowerCase());
+      cooldownMap.current[pos.symbol] = Date.now() + REENTRY_COOLDOWN_MS;
+      addLog("TRADE", `🔒 #${ticket} ${pos.symbol} ditutup manual — cooldown 10 menit aktif`);
+      addLog("INFO",  `⏱ ${pos.symbol} → entry ulang diizinkan setelah ${new Date(cooldownMap.current[pos.symbol]).toLocaleTimeString("id-ID")}`);
     }
     if (!demoMode && wsRef.current?.readyState === 1) {
       wsRef.current.send(JSON.stringify({type:"close_position",ticket}));
