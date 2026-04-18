@@ -319,7 +319,7 @@ function generateMockTick(symbol, prev) {
 const GROQ_API_KEY = "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";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 
-async function analyzeWithGroq(symbol, candles, tick, eaConfig) {
+async function analyzeWithGroq(symbol, candles, tick, eaConfig, timeframe = "M15") {
   const recent  = candles.slice(-20);
   const closes  = recent.map(c => c.close);
   const highs   = recent.map(c => c.high);
@@ -368,13 +368,43 @@ async function analyzeWithGroq(symbol, candles, tick, eaConfig) {
   const resLevels = resAbove.length >= 2 ? resAbove : allHighs.slice(-5);
   const supLevels = supBelow.length >= 2 ? supBelow : allLows.slice(0,5);
 
+  // ── Timeframe context — gaya trading & batas SL/TP ──────────────────
+  const TF_STYLE = {
+    M1:  { style:"Scalping ultra-cepat", atrMult:{ sl:0.15, tp:0.30 }, rrMin:1.5, desc:"Scalp M1: SL sangat ketat, hanya micro swing terdekat." },
+    M5:  { style:"Scalping",             atrMult:{ sl:0.30, tp:0.70 }, rrMin:1.5, desc:"Scalp M5: SL ~30% ATR, TP ~70% ATR. Swing 5–10 candle terakhir." },
+    M15: { style:"Intraday scalp/swing", atrMult:{ sl:0.50, tp:1.20 }, rrMin:1.8, desc:"Intraday M15: SL ~50% ATR, TP ~120% ATR." },
+    H1:  { style:"Intraday swing",       atrMult:{ sl:0.70, tp:1.80 }, rrMin:2.0, desc:"Swing H1: SL ~70% ATR, TP ~180% ATR." },
+    H4:  { style:"Swing trading",        atrMult:{ sl:1.00, tp:2.50 }, rrMin:2.0, desc:"Swing H4: SL ~100% ATR, TP ~250% ATR." },
+    D1:  { style:"Position trading",     atrMult:{ sl:1.50, tp:4.00 }, rrMin:2.5, desc:"Position D1: SL ~150% ATR, TP ~400% ATR." },
+  };
+
+  const tfCtx = TF_STYLE[timeframe] || TF_STYLE["M15"];
+
+  // Batas SL/TP dihitung dari ATR aktual candle — berlaku akurat untuk SEMUA instrumen
+  // XAUUSD atrRaw~$5 → M5 maxSL = 0.3×5 = $1.5 = 15 pip (benar untuk scalp XAU)
+  // BTCUSD atrRaw~$800 → M5 maxSL = 0.3×800 = $240 = 240 pip (benar untuk scalp BTC)
+  // EURUSD atrRaw~0.0020 → M5 maxSL = 0.3×0.0020 = 0.0006 = 6 pip (benar untuk scalp EUR)
+  const maxSLprice = +(atrRaw * tfCtx.atrMult.sl).toFixed(digits);
+  const maxTPprice = +(atrRaw * tfCtx.atrMult.tp).toFixed(digits);
+  const maxSLpips  = Math.round(maxSLprice / pipSz);
+  const maxTPpips  = Math.round(maxTPprice / pipSz);
+  const rrMin1     = tfCtx.rrMin;
+  const rrMin2     = rrMin1 + 0.5;
+
   const prompt = `You are a professional multi-instrument trading EA for Exness. Your job is to analyze raw market data and generate a signal with structured exits. All SL/TP values MUST be derived from the actual price levels provided — no hardcoded numbers, no guessing.
 
 INSTRUMENT: ${symbol} (${category})
 Pip size: ${pipSz} — meaning 1 pip = ${pipSz} in price units
 Entry zone: Bid=${tick.bid} | Ask=${tick.ask} | Spread=${spread} pips
 
-PRICE CONTEXT (20 candles M15):
+ACTIVE TIMEFRAME: ${timeframe} — Trading style: ${tfCtx.style}
+${tfCtx.desc}
+ATR candle range: ${atrRaw} (dipakai sebagai referensi volatilitas aktual)
+Maximum allowed SL: ${maxSLpips} pips = ${maxSLprice} in price (${(tfCtx.atrMult.sl*100).toFixed(0)}% of ATR)
+Maximum allowed TP2: ${maxTPpips} pips = ${maxTPprice} in price (${(tfCtx.atrMult.tp*100).toFixed(0)}% of ATR)
+⚠ HARD LIMIT: sl_price distance from entry must NOT exceed ${maxSLprice}. tp2_price distance must NOT exceed ${maxTPprice}.
+
+PRICE CONTEXT (20 candles ${timeframe}):
   Current:   ${last}
   ATR range: ${atrRaw}
   BB Upper:  ${bbUpper} | BB Lower: ${bbLower}
@@ -398,17 +428,19 @@ EXIT PLACEMENT RULES — STRICT: You MUST pick prices ONLY from the KEY PRICE LE
         SELL: sl_price = nearest Resistance level above entry (pick the closest one from the list)
         Then add/subtract a small buffer of ${minSLpips} pips minimum from that level.
         sl_pips = round( abs(sl_price - entry) / ${pipSz} )
+        ⚠ sl_pips MUST be <= ${maxSLpips} — if larger, pick a closer swing level.
 
   TP1 → BUY:  tp1_price = first Resistance above entry (pick from the list)
         SELL: tp1_price = first Support below entry (pick from the list)
-        Verify R:R = (tp1_price - entry) / (entry - sl_price) >= 1.5
-        If R:R < 1.5, use next resistance/support level further away.
+        Verify R:R = (tp1_price - entry) / (entry - sl_price) >= ${rrMin1}
+        If R:R < ${rrMin1}, use next resistance/support level further away.
         tp1_pips = round( abs(tp1_price - entry) / ${pipSz} )
 
   TP2 → BUY:  tp2_price = second Resistance above entry (further than TP1, from the list)
         SELL: tp2_price = second Support below entry (further than TP1, from the list)
-        Verify R:R = (tp2_price - entry) / (entry - sl_price) >= 2.5
+        Verify R:R = (tp2_price - entry) / (entry - sl_price) >= ${rrMin2}
         tp2_pips = round( abs(tp2_price - entry) / ${pipSz} )
+        ⚠ tp2_pips MUST be <= ${maxTPpips} — if larger, cap it at nearest valid level.
 
   SL+ → BUY:  sl_plus_price = entry + round(sl_pips × 0.3) × ${pipSz}
         SELL: sl_plus_price = entry - round(sl_pips × 0.3) × ${pipSz}
@@ -422,8 +454,8 @@ VALIDATION before returning:
   - SELL: sl_price > entry > tp1_price > tp2_price
   - sl_plus_price must be between entry and tp1_price
   - sl_price and tp1_price and tp2_price must come from the KEY PRICE LEVELS list above
+  - sl_pips <= ${maxSLpips} and tp2_pips <= ${maxTPpips} — HARD LIMIT for ${timeframe} ${tfCtx.style}
   - All pips fields must match their price counterparts via the formula above
-  - REJECT any sl_pips or tp_pips that seem unreasonably large for this instrument
 
 Return ONLY valid JSON — no commentary:
 {
@@ -462,7 +494,7 @@ Return ONLY valid JSON — no commentary:
   };
 
   // Post-process: validate AI output, fill gaps, guarantee correctness for ALL pairs
-  const postProcessAnalysis = (analysis, symbol, tick) => {
+  const postProcessAnalysis = (analysis, symbol, tick, maxSLpips, maxTPpips) => {
     if (!analysis || !analysis.signal) return analysis;
     const action = analysis.signal === "WAIT" ? "BUY" : analysis.signal;
     const entry  = +(analysis.entry_price || tick.bid);
@@ -551,6 +583,18 @@ Return ONLY valid JSON — no commentary:
     if (!slPlus.pips && sl.pips)
       slPlus = resolveLevel(0, Math.round(sl.pips * 0.3), entry, action, false, pipSz, digs);
 
+    // ── Hard cap: paksa SL/TP dalam batas maksimum timeframe ───────────
+    if (sl.pips > maxSLpips) {
+      sl = resolveLevel(0, maxSLpips, entry, action, true, pipSz, digs);
+    }
+    if (tp2.pips > maxTPpips) {
+      tp2 = resolveLevel(0, maxTPpips, entry, action, false, pipSz, digs);
+    }
+    if (tp1.pips > tp2.pips) {
+      // tp1 tidak boleh melebihi tp2
+      tp1 = resolveLevel(0, Math.round(tp2.pips * 0.5), entry, action, false, pipSz, digs);
+    }
+
     // ── Source tagging ──────────────────────────────────────────────────
     const source = (analysis.sl_price > 0 && validateSide(analysis.sl_price, entry, action, true))
       ? "AI" : "computed";
@@ -600,14 +644,14 @@ Return ONLY valid JSON — no commentary:
     console.log("[Groq Raw]", text);
     const clean = text.replace(/```json|```/g,"").trim();
     const parsed = JSON.parse(clean);
-    return postProcessAnalysis(parsed, symbol, tick);
+    return postProcessAnalysis(parsed, symbol, tick, maxSLpips, maxTPpips);
   } catch(e) {
     console.error("[Groq Fetch Error]", e);
-    // Fallback: derive SL from nearest swing level, not hardcoded table
-    const atrPips = Math.round(atrRaw / getPipSize(symbol));
-    const slPips  = Math.max(Math.round(atrPips * 0.3), minSLpips);
-    const tp1Pips = Math.round(slPips * 1.5);
-    const tp2Pips = Math.round(slPips * 2.5);
+    // Fallback: derive SL dari ATR, capped oleh limit timeframe
+    const atrPips  = Math.round(atrRaw / getPipSize(symbol));
+    const slPips   = Math.min(Math.max(Math.round(atrPips * 0.3), minSLpips), maxSLpips);
+    const tp1Pips  = Math.min(Math.round(slPips * 1.5), Math.round(maxTPpips * 0.5));
+    const tp2Pips  = Math.min(Math.round(slPips * 2.5), maxTPpips);
     const { sl: slP, tp: tp1P } = calcSLTP(symbol, "BUY", tick.bid||0, slPips, tp1Pips);
     const { tp: tp2P } = calcSLTP(symbol, "BUY", tick.bid||0, slPips, tp2Pips);
     return { signal:"WAIT", summary:`Error: ${e.message}`, confidence:"LOW", trend:"—",
@@ -1553,7 +1597,7 @@ export default function App() {
   const handleAnalyze = useCallback(async (symbol) => {
     setAnalyzing(p=>({...p,[symbol]:true}));
     const [result, mtf] = await Promise.all([
-      analyzeWithGroq(symbol, candles[symbol]||[], ticks[symbol]||{bid:0,ask:0,spread:0}, eaConfig),
+      analyzeWithGroq(symbol, candles[symbol]||[], ticks[symbol]||{bid:0,ask:0,spread:0}, eaConfig, timeframe),
       getMTFAnalysis(symbol, candles[symbol]||[], ticks[symbol]||{})
     ]);
     if (result?.summary?.startsWith("Error")) {
@@ -1565,7 +1609,7 @@ export default function App() {
     setMtfData(p=>({...p,[symbol]:mtf}));
     setAnalyzing(p=>({...p,[symbol]:false}));
     return result;
-  }, [candles, ticks, eaConfig, addLog]);
+  }, [candles, ticks, eaConfig, timeframe, addLog]);
 
   // EA AUTO EXECUTE
   // ─── ANTI-REORDER GUARD ────────────────────────────────────────────────
