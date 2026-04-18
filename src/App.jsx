@@ -389,19 +389,28 @@ DECISION LOGIC:
   SELL if: price below SMA10 & SMA20, RSI not oversold, bearish momentum from resistances
   WAIT if: mixed signals or price in congestion zone
 
-EXIT PLACEMENT RULES (derive all prices from the levels above):
-  SL  → BUY: just below nearest support | SELL: just above nearest resistance
-        Minimum sl_pips = ${minSLpips} (2.5× spread buffer)
+EXIT PLACEMENT RULES — STRICT: You MUST pick prices ONLY from the KEY PRICE LEVELS listed above.
+  Do NOT invent prices. Do NOT use ATR multiples. Do NOT use hardcoded pip values.
 
-  TP1 → BUY: first resistance above | SELL: first support below
-        R:R vs SL must be >= 1.5. This is where 50% position closes.
+  SL  → BUY:  sl_price = nearest Support level below entry (pick the closest one from the list)
+        SELL: sl_price = nearest Resistance level above entry (pick the closest one from the list)
+        Then add/subtract a small buffer of ${minSLpips} pips minimum from that level.
+        sl_pips = round( abs(sl_price - entry) / ${pipSz} )
 
-  TP2 → BUY: second stronger resistance | SELL: second deeper support
-        R:R vs SL must be >= 3.0. Remaining 50% runs here.
+  TP1 → BUY:  tp1_price = first Resistance above entry (pick from the list)
+        SELL: tp1_price = first Support below entry (pick from the list)
+        Verify R:R = (tp1_price - entry) / (entry - sl_price) >= 1.5
+        If R:R < 1.5, use next resistance/support level further away.
+        tp1_pips = round( abs(tp1_price - entry) / ${pipSz} )
 
-  SL+ → After TP1 hit, move SL to this price to lock in partial profit:
-        BUY: entry + round(sl_pips × 0.3) × ${pipSz}
-        SELL: entry - round(sl_pips × 0.3) × ${pipSz}
+  TP2 → BUY:  tp2_price = second Resistance above entry (further than TP1, from the list)
+        SELL: tp2_price = second Support below entry (further than TP1, from the list)
+        Verify R:R = (tp2_price - entry) / (entry - sl_price) >= 2.5
+        tp2_pips = round( abs(tp2_price - entry) / ${pipSz} )
+
+  SL+ → BUY:  sl_plus_price = entry + round(sl_pips × 0.3) × ${pipSz}
+        SELL: sl_plus_price = entry - round(sl_pips × 0.3) × ${pipSz}
+        sl_plus_pips = round( abs(sl_plus_price - entry) / ${pipSz} )
 
 PIP CONVERSION (mandatory — use this formula for every pips field):
   pips = round( abs(price_level - entry_price) / ${pipSz} )
@@ -410,7 +419,9 @@ VALIDATION before returning:
   - BUY:  sl_price < entry < tp1_price < tp2_price
   - SELL: sl_price > entry > tp1_price > tp2_price
   - sl_plus_price must be between entry and tp1_price
-  - All pips fields must match their price counterparts
+  - sl_price and tp1_price and tp2_price must come from the KEY PRICE LEVELS list above
+  - All pips fields must match their price counterparts via the formula above
+  - REJECT any sl_pips or tp_pips that seem unreasonably large for this instrument
 
 Return ONLY valid JSON — no commentary:
 {
@@ -481,21 +492,58 @@ Return ONLY valid JSON — no commentary:
         : slPlus.price < entry && slPlus.price > (tp1.price||0));
     if (!slPlusValid) slPlus = { price:0, pips:0 };
 
-    // ── Auto-fill missing levels from what we do have ───────────────────
-    // SL fallback: use ATR-based estimate (0.5× ATR from entry)
+    // ── Auto-fill missing levels — ALWAYS from nearest swing levels ─────
+    // SL fallback: nearest swing level on the wrong side of entry
     if (!sl.pips) {
-      const atrPips = Math.round(atrRaw / pipSz);
-      const slPips  = Math.max(Math.round(atrPips * 0.5), minSLpips);
-      sl = resolveLevel(0, slPips, entry, action, true, pipSz, digs);
+      const nearestSwingSL = action === "BUY"
+        ? supLevels[0]   // nearest support below
+        : resLevels[0];  // nearest resistance above
+      if (nearestSwingSL && nearestSwingSL > 0) {
+        const bufferPips = Math.max(minSLpips, 3);
+        const slPriceRaw = action === "BUY"
+          ? +(nearestSwingSL - bufferPips * pipSz).toFixed(digs)
+          : +(nearestSwingSL + bufferPips * pipSz).toFixed(digs);
+        sl = resolveLevel(slPriceRaw, 0, entry, action, true, pipSz, digs);
+      } else {
+        // last resort: ATR * 0.3 (smaller than before)
+        const atrPips = Math.round(atrRaw / pipSz);
+        const slPips  = Math.max(Math.round(atrPips * 0.3), minSLpips);
+        sl = resolveLevel(0, slPips, entry, action, true, pipSz, digs);
+      }
     }
 
-    // TP1 fallback: 1.5× SL distance
-    if (!tp1.pips && sl.pips)
-      tp1 = resolveLevel(0, Math.round(sl.pips * 1.5), entry, action, false, pipSz, digs);
+    // TP1 fallback: nearest swing level on the correct side (first resistance/support)
+    if (!tp1.pips && sl.pips) {
+      const nearestSwingTP1 = action === "BUY"
+        ? resLevels[0]   // first resistance above
+        : supLevels[0];  // first support below
+      if (nearestSwingTP1 && nearestSwingTP1 > 0 && validateSide(nearestSwingTP1, entry, action, false)) {
+        tp1 = resolveLevel(nearestSwingTP1, 0, entry, action, false, pipSz, digs);
+        // Ensure R:R >= 1.5, else step to next level
+        if (tp1.pips < sl.pips * 1.5) {
+          const nextLevel = action === "BUY" ? resLevels[1] : supLevels[1];
+          if (nextLevel && validateSide(nextLevel, entry, action, false))
+            tp1 = resolveLevel(nextLevel, 0, entry, action, false, pipSz, digs);
+          else
+            tp1 = resolveLevel(0, Math.round(sl.pips * 1.5), entry, action, false, pipSz, digs);
+        }
+      } else {
+        tp1 = resolveLevel(0, Math.round(sl.pips * 1.5), entry, action, false, pipSz, digs);
+      }
+    }
 
-    // TP2 fallback: 3× SL distance
-    if (!tp2.pips && sl.pips)
-      tp2 = resolveLevel(0, Math.round(sl.pips * 3), entry, action, false, pipSz, digs);
+    // TP2 fallback: second swing level further than TP1
+    if (!tp2.pips && sl.pips) {
+      const nextSwingTP2 = action === "BUY" ? resLevels[1] : supLevels[1];
+      if (nextSwingTP2 && validateSide(nextSwingTP2, entry, action, false) &&
+          (action === "BUY" ? nextSwingTP2 > tp1.price : nextSwingTP2 < tp1.price)) {
+        tp2 = resolveLevel(nextSwingTP2, 0, entry, action, false, pipSz, digs);
+        if (tp2.pips < sl.pips * 2.5)
+          tp2 = resolveLevel(0, Math.round(sl.pips * 2.5), entry, action, false, pipSz, digs);
+      } else {
+        tp2 = resolveLevel(0, Math.round(sl.pips * 2.5), entry, action, false, pipSz, digs);
+      }
+    }
 
     // SL+ fallback: entry + 30% of SL distance (lock partial profit)
     if (!slPlus.pips && sl.pips)
@@ -532,7 +580,7 @@ Return ONLY valid JSON — no commentary:
         temperature: 0.1,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: "You are a professional trading EA analyst. Respond ONLY with valid JSON. No markdown, no commentary, no extra text. Every numeric field must contain a real number derived from market data." },
+          { role: "system", content: "You are a professional trading EA analyst. Respond ONLY with valid JSON. No markdown, no commentary, no extra text. Every sl_price, tp1_price, tp2_price MUST be taken directly from the KEY PRICE LEVELS provided in the prompt — never invent prices or use ATR multiples. Pips are always computed as: round(abs(price - entry) / pip_size)." },
           { role: "user", content: prompt }
         ]
       })
@@ -553,11 +601,17 @@ Return ONLY valid JSON — no commentary:
     return postProcessAnalysis(parsed, symbol, tick);
   } catch(e) {
     console.error("[Groq Fetch Error]", e);
-    const fallback = getDefaultSLTP(symbol);
-    const { sl, tp } = calcSLTP(symbol, "BUY", tick.bid||0, fallback.sl, fallback.tp);
+    // Fallback: derive SL from nearest swing level, not hardcoded table
+    const atrPips = Math.round(atrRaw / getPipSize(symbol));
+    const slPips  = Math.max(Math.round(atrPips * 0.3), minSLpips);
+    const tp1Pips = Math.round(slPips * 1.5);
+    const tp2Pips = Math.round(slPips * 2.5);
+    const { sl: slP, tp: tp1P } = calcSLTP(symbol, "BUY", tick.bid||0, slPips, tp1Pips);
+    const { tp: tp2P } = calcSLTP(symbol, "BUY", tick.bid||0, slPips, tp2Pips);
     return { signal:"WAIT", summary:`Error: ${e.message}`, confidence:"LOW", trend:"—",
-             sl_pips:fallback.sl, tp_pips:fallback.tp, sl_price:sl, tp_price:tp,
-             pip_size:getPipSize(symbol), rr_ratio:+(fallback.tp/fallback.sl).toFixed(2) };
+             sl_pips:slPips, tp1_pips:tp1Pips, tp2_pips:tp2Pips,
+             sl_price:slP, tp1_price:tp1P, tp2_price:tp2P, tp_pips:tp2Pips, tp_price:tp2P,
+             pip_size:getPipSize(symbol), rr_ratio:+(tp1Pips/slPips).toFixed(2) };
   }
 }
 
