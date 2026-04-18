@@ -38,7 +38,10 @@ function generateMockTick(symbol, prev) {
 }
 
 // ===================== AI ANALYSIS =====================
-async function analyzeWithClaude(symbol, candles, tick, eaConfig) {
+const GROQ_API_KEY = "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";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+
+async function analyzeWithGroq(symbol, candles, tick, eaConfig) {
   const recent = candles.slice(-20);
   const closes = recent.map(c => c.close);
   const last = closes[closes.length-1];
@@ -89,22 +92,39 @@ Kembalikan HANYA JSON valid ini:
 }`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${GROQ_API_KEY}`
+      },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: GROQ_MODEL,
         max_tokens: 1000,
-        system: "Kamu adalah EA trading professional. Jawab HANYA dengan JSON valid, tanpa markdown, tanpa teks tambahan.",
-        messages: [{ role: "user", content: prompt }]
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: "Kamu adalah EA trading professional. Jawab HANYA dengan JSON valid, tanpa markdown, tanpa teks tambahan." },
+          { role: "user", content: prompt }
+        ]
       })
     });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const errMsg = errData?.error?.message || `HTTP ${res.status}`;
+      console.error("[Groq Error]", errMsg, errData);
+      return { signal:"WAIT", summary:`Error Groq: ${errMsg}`, confidence:"LOW", trend:"—", sl_pips:eaConfig.defaultSL, tp_pips:eaConfig.defaultTP, rr_ratio:0 };
+    }
+
     const data = await res.json();
-    const text = data.content?.[0]?.text || "{}";
+    const text = data.choices?.[0]?.message?.content || "{}";
+    console.log("[Groq Raw]", text);
     const clean = text.replace(/```json|```/g,"").trim();
     return JSON.parse(clean);
   } catch(e) {
-    return { signal:"WAIT", summary:"Gagal mengambil analisis AI.", confidence:"LOW", trend:"—", sl_pips:eaConfig.defaultSL, tp_pips:eaConfig.defaultTP, rr_ratio:0 };
+    console.error("[Groq Fetch Error]", e);
+    return { signal:"WAIT", summary:`Error: ${e.message}`, confidence:"LOW", trend:"—", sl_pips:eaConfig.defaultSL, tp_pips:eaConfig.defaultTP, rr_ratio:0 };
   }
 }
 
@@ -503,14 +523,19 @@ export default function App() {
   const handleAnalyze = useCallback(async (symbol) => {
     setAnalyzing(p=>({...p,[symbol]:true}));
     const [result, mtf] = await Promise.all([
-      analyzeWithClaude(symbol, candles[symbol]||[], ticks[symbol]||{bid:0,ask:0,spread:0}, eaConfig),
+      analyzeWithGroq(symbol, candles[symbol]||[], ticks[symbol]||{bid:0,ask:0,spread:0}, eaConfig),
       getMTFAnalysis(symbol, candles[symbol]||[], ticks[symbol]||{})
     ]);
+    if (result?.summary?.startsWith("Error")) {
+      addLog("ERROR", `[${symbol}] ${result.summary}`);
+    } else {
+      addLog("INFO", `[${symbol}] Groq AI: ${result?.signal||"?"} | ${result?.confidence||"?"} | ${result?.summary?.slice(0,60)||""}`);
+    }
     setAnalyses(p=>({...p,[symbol]:result}));
     setMtfData(p=>({...p,[symbol]:mtf}));
     setAnalyzing(p=>({...p,[symbol]:false}));
     return result;
-  }, [candles, ticks, eaConfig]);
+  }, [candles, ticks, eaConfig, addLog]);
 
   // EA AUTO EXECUTE
   const executeEA = useCallback(async () => {
