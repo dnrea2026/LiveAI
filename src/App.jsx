@@ -620,7 +620,7 @@ function PositionsTable({ positions, onClose }) {
 }
 
 // EA LOG TAB (full featured)
-function EALogTab({ logs, setLogs, eaRunning, eaConfig, positions, eaStats, account }) {
+function EALogTab({ logs, setLogs, eaRunning, eaConfig, positions, eaStats, account, onClearAll }) {
   const [countdown, setCountdown] = useState(0);
   const [scanCount, setScanCount] = useState(0);
   const timerRef = useRef(null);
@@ -659,6 +659,7 @@ function EALogTab({ logs, setLogs, eaRunning, eaConfig, positions, eaStats, acco
           </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>setLogs([])} style={{background:"#0f172a",border:"1px solid #1e293b",color:"#475569",padding:"3px 10px",borderRadius:4,cursor:"pointer",fontSize:10,fontFamily:"monospace"}}>🗑 Clear Log</button>
+            <button onClick={onClearAll} style={{background:"#2d0b0b",border:"1px solid #7f1d1d",color:"#f87171",padding:"3px 10px",borderRadius:4,cursor:"pointer",fontSize:10,fontFamily:"monospace"}}>⚠ Reset Semua</button>
             <span style={{color:"#475569",fontSize:10,fontFamily:"monospace",alignSelf:"center"}}>{logs.length} entries</span>
           </div>
         </div>
@@ -702,32 +703,56 @@ function EALogTab({ logs, setLogs, eaRunning, eaConfig, positions, eaStats, acco
   );
 }
 
+// ===================== PERSISTENCE HELPERS =====================
+function loadLS(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+}
+function saveLS(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+
 // ===================== MAIN APP =====================
 export default function App() {
-  const [wsUrl, setWsUrl] = useState("ws://localhost:8765");
+  const [wsUrl, setWsUrl] = useState(() => loadLS("dnr_wsUrl", "ws://localhost:8765"));
   const [wsStatus, setWsStatus] = useState("disconnected");
   const [demoMode, setDemoMode] = useState(true);
   const [ticks, setTicks] = useState({});
   const [candles, setCandles] = useState({});
-  const [positions, setPositions] = useState([]);
-  const [account, setAccount] = useState(null);
-  const [selected, setSelected] = useState("BTCUSD");
-  const [timeframe, setTimeframe] = useState("M15");
-  const [analyses, setAnalyses] = useState({});
-  const [mtfData, setMtfData] = useState({});
-  const [analyzing, setAnalyzing] = useState({});
-  const [tab, setTab] = useState("chart");
-  const [eaRunning, setEaRunning] = useState(false);
-  const [eaLogs, setEaLogs] = useState([]);
-  const [eaStats, setEaStats] = useState({ totalTrades:0, winTrades:0, lossTrades:0, totalPnL:0, todayTrades:0 });
-  const [eaConfig, setEaConfig] = useState({
+
+  // ---- PERSISTED STATE ----
+  const [positions, setPositions] = useState(() => loadLS("dnr_positions", []));
+  const [account, setAccount] = useState(() => loadLS("dnr_account", null));
+  const [selected, setSelected] = useState(() => loadLS("dnr_selected", "BTCUSD"));
+  const [timeframe, setTimeframe] = useState(() => loadLS("dnr_timeframe", "M15"));
+  const [eaLogs, setEaLogs] = useState(() => loadLS("dnr_eaLogs", []));
+  const [eaStats, setEaStats] = useState(() => loadLS("dnr_eaStats", { totalTrades:0, winTrades:0, lossTrades:0, totalPnL:0, todayTrades:0 }));
+  const [eaConfig, setEaConfig] = useState(() => loadLS("dnr_eaConfig", {
     defaultSL: 200, defaultTP: 500, maxLot: 0.5, defaultLot: 0.1,
     maxDailyLoss: 500, maxOpenTrades: 3, minConfidence: "MEDIUM",
     mtfFilter: "OFF", autoInterval: 60000
-  });
-  const [activeEAPairs, setActiveEAPairs] = useState(["BTCUSD","ETHUSD"]);
+  }));
+  const [activeEAPairs, setActiveEAPairs] = useState(() => loadLS("dnr_activeEAPairs", ["BTCUSD","ETHUSD"]));
+  const [analyses, setAnalyses] = useState(() => loadLS("dnr_analyses", {}));
+  // ---- END PERSISTED STATE ----
+
+  const [mtfData, setMtfData] = useState({});
+  const [analyzing, setAnalyzing] = useState({});
+  const [tab, setTab] = useState("chart");
+  const [eaRunning, setEaRunning] = useState(false);  // EA tidak auto-start saat refresh (safety)
   const [pairCategory, setPairCategory] = useState("Majors");
   const [pairSearch, setPairSearch] = useState("");
+
+  // Auto-save to localStorage whenever these states change
+  useEffect(() => { saveLS("dnr_positions",    positions);    }, [positions]);
+  useEffect(() => { saveLS("dnr_account",      account);      }, [account]);
+  useEffect(() => { saveLS("dnr_selected",     selected);     }, [selected]);
+  useEffect(() => { saveLS("dnr_timeframe",    timeframe);    }, [timeframe]);
+  useEffect(() => { saveLS("dnr_eaLogs",       eaLogs.slice(-500)); }, [eaLogs]);
+  useEffect(() => { saveLS("dnr_eaStats",      eaStats);      }, [eaStats]);
+  useEffect(() => { saveLS("dnr_eaConfig",     eaConfig);     }, [eaConfig]);
+  useEffect(() => { saveLS("dnr_activeEAPairs",activeEAPairs);}, [activeEAPairs]);
+  useEffect(() => { saveLS("dnr_analyses",     analyses);     }, [analyses]);
+  useEffect(() => { saveLS("dnr_wsUrl",        wsUrl);        }, [wsUrl]);
 
   const wsRef = useRef(null);
   const demoInterval = useRef(null);
@@ -735,8 +760,27 @@ export default function App() {
 
   const addLog = useCallback((type, msg) => {
     const time = new Date().toTimeString().slice(0,8);
-    setEaLogs(prev => [...prev.slice(-200), { type, msg, time }]);
+    setEaLogs(prev => [...prev.slice(-499), { type, msg, time }]);
   }, []);
+
+  // On first mount: log session restore
+  useEffect(() => {
+    const savedPos  = loadLS("dnr_positions", []);
+    const savedLogs = loadLS("dnr_eaLogs", []);
+    const now = new Date().toLocaleString("id-ID");
+    if (savedLogs.length > 0 || savedPos.length > 0) {
+      addLog("SYSTEM", `🔄 SESSION DIPULIHKAN [${now}] — ${savedPos.length} posisi | ${savedLogs.length} log entries sebelumnya`);
+    } else {
+      addLog("SYSTEM", `🚀 DnR EA Terminal dimulai [${now}]`);
+    }
+  // eslint-disable-next-line
+  }, []);
+
+  const clearAllData = () => {
+    ["dnr_positions","dnr_account","dnr_eaLogs","dnr_eaStats","dnr_analyses"].forEach(k => localStorage.removeItem(k));
+    setPositions([]); setEaLogs([]); setEaStats({ totalTrades:0, winTrades:0, lossTrades:0, totalPnL:0, todayTrades:0 }); setAnalyses({});
+    addLog("SYSTEM", "🗑 Semua data lokal dihapus");
+  };
 
   const startDemo = useCallback(() => {
     setDemoMode(true);
@@ -744,7 +788,10 @@ export default function App() {
     PAIRS.forEach(p => { initCandles[p] = generateMockCandles(p, 80); initTicks[p] = generateMockTick(p, null); });
     setCandles(initCandles);
     setTicks(initTicks);
-    setAccount({ balance:10000, equity:10050, free_margin:9500, profit:50, leverage:100, currency:"USD" });
+    // Hanya set account default jika belum ada account tersimpan
+    if (!loadLS("dnr_account", null)) {
+      setAccount({ balance:10000, equity:10050, free_margin:9500, profit:50, leverage:100, currency:"USD" });
+    }
     if (demoInterval.current) clearInterval(demoInterval.current);
     demoInterval.current = setInterval(() => {
       setTicks(prev => { const next={}; PAIRS.forEach(p => { next[p]=generateMockTick(p, prev[p]); }); return next; });
@@ -1058,24 +1105,50 @@ export default function App() {
                 </div>
               ))}
             </div>
-            {/* Active Pairs */}
+            {/* Active Pairs — GLOBAL MULTI-CATEGORY */}
             <div style={{marginTop:8}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                <span style={{color:"#334155",fontSize:9,letterSpacing:1}}>AKTIF PAIR ({activeEAPairs.length})</span>
-                <div style={{display:"flex",gap:4}}>
-                  <button onClick={()=>setActiveEAPairs(PAIR_CATEGORIES[pairCategory]||[])} style={{background:"#052e16",border:"1px solid #16a34a",color:"#4ade80",padding:"1px 6px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace"}}>+Tab</button>
-                  <button onClick={()=>setActiveEAPairs([])} style={{background:"#2d0b0b",border:"1px solid #dc2626",color:"#f87171",padding:"1px 6px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace"}}>Clear</button>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                <span style={{color:"#334155",fontSize:9,letterSpacing:1}}>AKTIF PAIR <span style={{color:"#1d4ed8",fontWeight:700}}>({activeEAPairs.length})</span></span>
+                <div style={{display:"flex",gap:3}}>
+                  <button
+                    title={`Tambah semua ${pairCategory} ke aktif`}
+                    onClick={()=>setActiveEAPairs(prev=>[...new Set([...prev,...(PAIR_CATEGORIES[pairCategory]||[])])])}
+                    style={{background:"#052e16",border:"1px solid #16a34a",color:"#4ade80",padding:"1px 7px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace"}}>
+                    +{pairCategory}
+                  </button>
+                  <button onClick={()=>setActiveEAPairs(PAIRS)} style={{background:"#0c1a2e",border:"1px solid #1d4ed8",color:"#93c5fd",padding:"1px 7px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace"}}>+All</button>
+                  <button onClick={()=>setActiveEAPairs([])} style={{background:"#2d0b0b",border:"1px solid #dc2626",color:"#f87171",padding:"1px 7px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace"}}>✕ Clear</button>
                 </div>
               </div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:3,maxHeight:80,overflowY:"auto"}}>
-                {(PAIR_CATEGORIES[pairCategory]||PAIRS).map(p=>(
-                  <button key={p} onClick={()=>setActiveEAPairs(prev=>prev.includes(p)?prev.filter(x=>x!==p):[...prev,p])}
-                    style={{background:activeEAPairs.includes(p)?"#0c1a2e":"#0a0f1e",border:`1px solid ${activeEAPairs.includes(p)?"#1d4ed8":"#1e293b"}`,color:activeEAPairs.includes(p)?"#93c5fd":"#334155",padding:"2px 6px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace"}}>
-                    {p}
-                  </button>
-                ))}
+
+              {/* Selected chips — tampil semua pair aktif dari semua kategori */}
+              {activeEAPairs.length > 0 ? (
+                <div style={{display:"flex",flexWrap:"wrap",gap:3,maxHeight:72,overflowY:"auto",marginBottom:6,padding:"4px",background:"#0a0f1e",borderRadius:6,border:"1px solid #1e3a5f"}}>
+                  {activeEAPairs.map(p=>(
+                    <span key={p} style={{display:"inline-flex",alignItems:"center",gap:3,background:"#0c1a2e",border:"1px solid #1d4ed8",color:"#93c5fd",padding:"1px 4px 1px 6px",borderRadius:3,fontSize:9,fontFamily:"monospace"}}>
+                      {p}
+                      <button onClick={()=>setActiveEAPairs(prev=>prev.filter(x=>x!==p))} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:9,padding:"0 1px",lineHeight:1}}>✕</button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div style={{color:"#1e293b",fontSize:9,fontFamily:"monospace",marginBottom:6,padding:"6px",background:"#0a0f1e",borderRadius:6,textAlign:"center"}}>Belum ada pair dipilih</div>
+              )}
+
+              {/* Pair picker per kategori — additive toggle */}
+              <div style={{fontSize:9,color:"#334155",marginBottom:3,fontFamily:"monospace"}}>PILIH DARI: <span style={{color:"#475569"}}>{pairCategory}</span></div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:2}}>
+                {(PAIR_CATEGORIES[pairCategory]||[]).map(p=>{
+                  const isActive = activeEAPairs.includes(p);
+                  return (
+                    <button key={p}
+                      onClick={()=>setActiveEAPairs(prev=>isActive?prev.filter(x=>x!==p):[...prev,p])}
+                      style={{background:isActive?"#0c1a2e":"#070e1d",border:`1px solid ${isActive?"#1d4ed8":"#1e293b"}`,color:isActive?"#93c5fd":"#334155",padding:"2px 5px",borderRadius:3,cursor:"pointer",fontSize:9,fontFamily:"monospace",position:"relative"}}>
+                      {isActive && <span style={{marginRight:2,color:"#4ade80"}}>✓</span>}{p}
+                    </button>
+                  );
+                })}
               </div>
-              {activeEAPairs.length>0 && <div style={{color:"#1e3a5f",fontSize:9,marginTop:3,fontFamily:"monospace"}}>Aktif: {activeEAPairs.join(", ")}</div>}
             </div>
           </div>
 
@@ -1231,7 +1304,7 @@ export default function App() {
 
           {/* LOG TAB */}
           {tab==="log" && (
-            <EALogTab logs={eaLogs} setLogs={setEaLogs} eaRunning={eaRunning} eaConfig={eaConfig} positions={positions} eaStats={eaStats} account={account}/>
+            <EALogTab logs={eaLogs} setLogs={setEaLogs} eaRunning={eaRunning} eaConfig={eaConfig} positions={positions} eaStats={eaStats} account={account} onClearAll={clearAllData}/>
           )}
         </div>
       </div>
